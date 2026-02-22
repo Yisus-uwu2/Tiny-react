@@ -1,17 +1,14 @@
 /**
- * PantallaEstadisticas — Pantalla de estadísticas de salud.
- * Rediseñada con encabezado limpio, selector de período tipo píldora,
- * puntuación de bienestar, gráficos detallados y tabla resumen.
+ * PantallaEstadisticas — Pantalla de análisis de salud.
+ * Contenido diferenciado: tendencias, distribución por zonas,
+ * patrón de actividad, timeline de eventos e insights de salud.
  */
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity,
-  Animated, Easing,
+  Animated,
 } from 'react-native';
-import Svg, {
-  Polyline, Line, Circle, Rect, Text as SvgText,
-  Defs, LinearGradient as SvgGrad, Stop, Path,
-} from 'react-native-svg';
+import Svg, { Circle } from 'react-native-svg';
 import { useDatosSensor } from '../hooks/useDatosSensor';
 import { Colores } from '../constantes/colores';
 
@@ -24,20 +21,56 @@ const PERIODOS: { clave: Periodo; etiqueta: string }[] = [
   { clave: '24h', etiqueta: '24 horas' },
 ];
 
+// ── Utilidades ──────────────────────────────────────────────────
+
+const promedio = (arr: number[], dec = 0) => {
+  if (!arr.length) return 0;
+  const v = arr.reduce((a, b) => a + b, 0) / arr.length;
+  return dec > 0 ? parseFloat(v.toFixed(dec)) : Math.round(v);
+};
+
+const calcularTendencia = (datos: number[]): 'subiendo' | 'bajando' | 'estable' => {
+  if (datos.length < 3) return 'estable';
+  const mitad = Math.floor(datos.length / 2);
+  const promPrimera = promedio(datos.slice(0, mitad), 1);
+  const promSegunda = promedio(datos.slice(mitad), 1);
+  const diff = promSegunda - promPrimera;
+  const umbral = promPrimera * 0.015;
+  if (diff > umbral) return 'subiendo';
+  if (diff < -umbral) return 'bajando';
+  return 'estable';
+};
+
+type Actividad = 'dormido' | 'tranquilo' | 'activo' | 'llorando';
+const obtenerActividad = (rc: number): Actividad => {
+  if (rc < 125) return 'dormido';
+  if (rc < 135) return 'tranquilo';
+  if (rc < 150) return 'activo';
+  return 'llorando';
+};
+
+interface EventoSalud {
+  hora: string;
+  tipo: 'alerta' | 'precaución';
+  signo: string;
+  valor: string;
+  icono: string;
+  color: string;
+}
+
 // ── Pantalla principal ──────────────────────────────────────────
 
 export default function PantallaEstadisticas() {
   const { datos, historial } = useDatosSensor();
   const [periodo, setPeriodo] = useState<Periodo>('24h');
 
-  // Animación de entrada
+  // Animaciones
   const animEntrada = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.spring(animEntrada, { toValue: 1, useNativeDriver: true, tension: 50, friction: 9 }).start();
   }, []);
 
-  // Animación del indicador del selector de período
-  const animPildora = useRef(new Animated.Value(2)).current; // índice 2 = '24h'
+  const animPildora = useRef(new Animated.Value(2)).current;
   const indicePeriodo = PERIODOS.findIndex(p => p.clave === periodo);
   useEffect(() => {
     Animated.spring(animPildora, {
@@ -48,21 +81,15 @@ export default function PantallaEstadisticas() {
     }).start();
   }, [indicePeriodo]);
 
-  // Datos filtrados por período
+  // Datos filtrados
   const corteMap: Record<Periodo, number> = { '1h': 2, '6h': 8, '24h': 24 };
   const datosCorte = historial.slice(-corteMap[periodo]);
 
   const datosRC = datosCorte.map(h => h.ritmoCardiaco);
   const datosO2 = datosCorte.map(h => h.oxigeno);
   const datosTemp = datosCorte.map(h => h.temperatura);
-  const horas = datosCorte.map(h => h.hora);
 
-  const promedio = (arr: number[], dec = 0) => {
-    const v = arr.reduce((a, b) => a + b, 0) / (arr.length || 1);
-    return dec > 0 ? parseFloat(v.toFixed(dec)) : Math.round(v);
-  };
-
-  // ── Cálculo de puntuación de bienestar
+  // ── Puntuación de bienestar
   const puntajeRC = datos.ritmoCardiaco >= 100 && datos.ritmoCardiaco <= 160 ? 100
     : datos.ritmoCardiaco >= 90 && datos.ritmoCardiaco <= 170 ? 70 : 40;
   const puntajeO2 = datos.oxigeno >= 95 ? 100 : datos.oxigeno >= 92 ? 60 : 30;
@@ -77,74 +104,183 @@ export default function PantallaEstadisticas() {
     : puntajeGeneral >= 65 ? Colores.actividad
     : puntajeGeneral >= 45 ? Colores.advertencia : Colores.peligro;
 
-  // Configuración de los 3 signos vitales para gráficos
-  const signosVitales = useMemo(() => [
-    {
-      clave: 'rc',
-      icono: '❤️',
-      titulo: 'Ritmo cardíaco',
-      datos: datosRC,
-      horas,
-      actual: datos.ritmoCardiaco,
-      unidad: 'bpm',
-      color: Colores.corazon,
-      degradado: Colores.gradienteCorazon as [string, string],
-      normalMin: 100,
-      normalMax: 160,
-      prom: promedio(datosRC),
-      max: Math.max(...datosRC),
-      min: Math.min(...datosRC),
-      decimales: 0,
-      puntaje: puntajeRC,
-    },
-    {
-      clave: 'o2',
-      icono: '💧',
-      titulo: 'Oxigenación SpO₂',
-      datos: datosO2,
-      horas,
-      actual: datos.oxigeno,
-      unidad: '%',
-      color: Colores.oxigeno,
-      degradado: Colores.gradienteOxigeno as [string, string],
-      normalMin: 95,
-      normalMax: 100,
-      prom: promedio(datosO2, 1),
-      max: Math.max(...datosO2),
-      min: Math.min(...datosO2),
-      decimales: 1,
-      puntaje: puntajeO2,
-    },
-    {
-      clave: 'temp',
-      icono: '🌡️',
-      titulo: 'Temperatura',
-      datos: datosTemp,
-      horas,
-      actual: datos.temperatura,
-      unidad: '°C',
-      color: Colores.temperatura,
-      degradado: Colores.gradienteTemperatura as [string, string],
-      normalMin: 36.5,
-      normalMax: 37.5,
-      prom: promedio(datosTemp, 1),
-      max: parseFloat(Math.max(...datosTemp).toFixed(1)),
-      min: parseFloat(Math.min(...datosTemp).toFixed(1)),
-      decimales: 1,
-      puntaje: puntajeTemp,
-    },
-  ], [datosRC, datosO2, datosTemp, datos]);
+  // ── Tendencias
+  const tendenciaRC = calcularTendencia(datosRC);
+  const tendenciaO2 = calcularTendencia(datosO2);
+  const tendenciaTemp = calcularTendencia(datosTemp);
+
+  // ── Distribución por zonas
+  const calcularZonas = (datos: number[], normalMin: number, normalMax: number, alertaMin: number, alertaMax: number) => {
+    let normal = 0, precaucion = 0, alerta = 0;
+    datos.forEach(v => {
+      if (v >= normalMin && v <= normalMax) normal++;
+      else if (v < alertaMin || v > alertaMax) alerta++;
+      else precaucion++;
+    });
+    const total = datos.length || 1;
+    return {
+      normal: Math.round((normal / total) * 100),
+      precaucion: Math.round((precaucion / total) * 100),
+      alerta: Math.round((alerta / total) * 100),
+    };
+  };
+
+  const zonasRC = calcularZonas(datosRC, 100, 160, 90, 170);
+  const zonasO2 = calcularZonas(datosO2, 95, 100, 93, 100);
+  const zonasTemp = calcularZonas(datosTemp, 36.5, 37.5, 35.5, 38.0);
+
+  // ── Distribución de actividad
+  const actividadDist = useMemo(() => {
+    const conteo: Record<Actividad, number> = { dormido: 0, tranquilo: 0, activo: 0, llorando: 0 };
+    datosRC.forEach(rc => { conteo[obtenerActividad(rc)]++; });
+    const total = datosRC.length || 1;
+    return {
+      dormido: Math.round((conteo.dormido / total) * 100),
+      tranquilo: Math.round((conteo.tranquilo / total) * 100),
+      activo: Math.round((conteo.activo / total) * 100),
+      llorando: Math.round((conteo.llorando / total) * 100),
+    };
+  }, [datosRC]);
+
+  // ── Eventos / alertas
+  const eventos = useMemo((): EventoSalud[] => {
+    const lista: EventoSalud[] = [];
+    datosCorte.forEach(h => {
+      if (h.ritmoCardiaco < 100 || h.ritmoCardiaco > 170) {
+        lista.push({
+          hora: h.hora,
+          tipo: h.ritmoCardiaco < 90 || h.ritmoCardiaco > 180 ? 'alerta' : 'precaución',
+          signo: 'Ritmo cardíaco',
+          valor: `${h.ritmoCardiaco} bpm`,
+          icono: '❤️',
+          color: Colores.corazon,
+        });
+      }
+      if (h.oxigeno < 95) {
+        lista.push({
+          hora: h.hora,
+          tipo: h.oxigeno < 93 ? 'alerta' : 'precaución',
+          signo: 'Oxigenación',
+          valor: `${h.oxigeno}%`,
+          icono: '💧',
+          color: Colores.oxigeno,
+        });
+      }
+      if (h.temperatura < 36.5 || h.temperatura > 37.5) {
+        lista.push({
+          hora: h.hora,
+          tipo: h.temperatura < 35.5 || h.temperatura > 38.0 ? 'alerta' : 'precaución',
+          signo: 'Temperatura',
+          valor: `${h.temperatura}°C`,
+          icono: '🌡️',
+          color: Colores.temperatura,
+        });
+      }
+    });
+    return lista.slice(-8).reverse();
+  }, [datosCorte]);
+
+  // ── Insights de salud
+  const insights = useMemo(() => {
+    const lista: { icono: string; titulo: string; texto: string; color: string }[] = [];
+
+    // Estabilidad del ritmo cardíaco
+    const desviacionRC = datosRC.length > 1
+      ? Math.sqrt(datosRC.reduce((sum, v) => sum + Math.pow(v - promedio(datosRC), 2), 0) / datosRC.length)
+      : 0;
+    if (desviacionRC < 8) {
+      lista.push({
+        icono: '💚',
+        titulo: 'Ritmo cardíaco estable',
+        texto: `La variabilidad del ritmo cardíaco es baja (±${Math.round(desviacionRC)} bpm), lo que indica un estado tranquilo y saludable.`,
+        color: Colores.seguro,
+      });
+    } else if (desviacionRC > 15) {
+      lista.push({
+        icono: '💛',
+        titulo: 'Variabilidad cardíaca alta',
+        texto: `Se detectó variabilidad elevada (±${Math.round(desviacionRC)} bpm). Puede indicar períodos alternos de actividad y reposo.`,
+        color: Colores.advertencia,
+      });
+    }
+
+    // Oxigenación
+    const minO2 = datosO2.length ? Math.min(...datosO2) : 98;
+    if (minO2 >= 96) {
+      lista.push({
+        icono: '🫁',
+        titulo: 'Oxigenación excelente',
+        texto: 'La SpO₂ se ha mantenido por encima de 96% durante todo el período. Excelente función respiratoria.',
+        color: Colores.seguro,
+      });
+    } else if (minO2 < 94) {
+      lista.push({
+        icono: '⚠️',
+        titulo: 'Revisar oxigenación',
+        texto: `Se registraron lecturas de SpO₂ de ${minO2}%. Considere verificar la posición del sensor y consultar al pediatra.`,
+        color: Colores.peligro,
+      });
+    }
+
+    // Temperatura
+    const maxTemp = datosTemp.length ? Math.max(...datosTemp) : 36.8;
+    const minTemp = datosTemp.length ? Math.min(...datosTemp) : 36.8;
+    if (maxTemp <= 37.5 && minTemp >= 36.5) {
+      lista.push({
+        icono: '🌟',
+        titulo: 'Temperatura ideal',
+        texto: `La temperatura se ha mantenido en el rango ideal (${minTemp.toFixed(1)}°C – ${maxTemp.toFixed(1)}°C) durante todo el período.`,
+        color: Colores.seguro,
+      });
+    } else if (maxTemp > 37.8) {
+      lista.push({
+        icono: '🔥',
+        titulo: 'Temperatura elevada detectada',
+        texto: `Se registró una temperatura máxima de ${maxTemp.toFixed(1)}°C. Vigile y consulte al pediatra si persiste.`,
+        color: Colores.peligro,
+      });
+    }
+
+    // Patrón de actividad
+    if (actividadDist.dormido > 50) {
+      lista.push({
+        icono: '😴',
+        titulo: 'Mayormente en reposo',
+        texto: `El bebé ha pasado el ${actividadDist.dormido}% del tiempo dormido. Es normal en las primeras semanas de vida.`,
+        color: Colores.oxigeno,
+      });
+    } else if (actividadDist.llorando > 20) {
+      lista.push({
+        icono: '👶',
+        titulo: 'Períodos de llanto frecuentes',
+        texto: `Se detectó llanto en el ${actividadDist.llorando}% del tiempo. Verifique alimentación, pañal y comodidad.`,
+        color: Colores.advertencia,
+      });
+    }
+
+    // Tendencia general
+    if (tendenciaRC === 'estable' && tendenciaO2 === 'estable' && tendenciaTemp === 'estable') {
+      lista.push({
+        icono: '📊',
+        titulo: 'Signos vitales estables',
+        texto: 'Todos los indicadores muestran una tendencia estable durante el período seleccionado.',
+        color: Colores.primario,
+      });
+    }
+
+    return lista;
+  }, [datosRC, datosO2, datosTemp, actividadDist, tendenciaRC, tendenciaO2, tendenciaTemp]);
 
   return (
     <ScrollView style={e.contenedor} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 36 }}>
 
-      {/* ── ENCABEZADO LIMPIO ── */}
+      {/* ── ENCABEZADO ── */}
       <View style={e.zonaEncabezado}>
         <View style={e.espacioSuperior} />
         <View style={e.filaEncabezado}>
           <View>
             <Text style={e.tituloEncabezado}>Estadísticas</Text>
-            <Text style={e.subtituloEncabezado}>Resumen de salud del bebé</Text>
+            <Text style={e.subtituloEncabezado}>Análisis detallado de salud</Text>
           </View>
           <View style={[e.puntoVivo, { backgroundColor: datos.conectado ? Colores.seguro : Colores.peligro }]}>
             <View style={[e.puntoVivoInterno, { backgroundColor: datos.conectado ? Colores.seguro : Colores.peligro }]} />
@@ -152,7 +288,7 @@ export default function PantallaEstadisticas() {
         </View>
       </View>
 
-      {/* ── SELECTOR DE PERÍODO (PÍLDORA) ── */}
+      {/* ── SELECTOR DE PERÍODO ── */}
       <View style={e.contenedorPildora}>
         <View style={e.pistaPildora}>
           <Animated.View
@@ -186,99 +322,180 @@ export default function PantallaEstadisticas() {
         </View>
       </View>
 
-      {/* ── PUNTUACIÓN DE BIENESTAR ── */}
+      {/* ── PUNTUACIÓN DE BIENESTAR (compacto) ── */}
       <Animated.View style={[e.tarjetaPuntaje, {
         opacity: animEntrada,
         transform: [{ translateY: animEntrada.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
       }]}>
-        <View style={e.filaPuntajeSuperior}>
-          <View>
-            <Text style={e.tituloPuntaje}>Índice de bienestar</Text>
-            <Text style={e.subtituloPuntaje}>Basado en signos vitales actuales</Text>
-          </View>
-          <View style={[e.insigniaPuntaje, { backgroundColor: colorPuntaje + '18', borderColor: colorPuntaje + '40' }]}>
-            <Text style={[e.textoPuntajeInsignia, { color: colorPuntaje }]}>{etiquetaPuntaje}</Text>
-          </View>
-        </View>
-
-        {/* Círculo de puntuación */}
-        <View style={e.seccionCirculo}>
+        <View style={e.filaPuntajeCompacta}>
           <CirculoPuntaje puntaje={puntajeGeneral} color={colorPuntaje} />
-        </View>
-
-        {/* Barras de desglose */}
-        <View style={e.desgloseContainer}>
-          {signosVitales.map(sv => (
-            <BarraPuntaje key={sv.clave} etiqueta={sv.titulo} icono={sv.icono} puntaje={sv.puntaje} color={sv.color} />
-          ))}
+          <View style={e.infoPuntaje}>
+            <Text style={e.tituloPuntaje}>Índice de bienestar</Text>
+            <View style={[e.insigniaPuntaje, { backgroundColor: colorPuntaje + '18', borderColor: colorPuntaje + '40' }]}>
+              <Text style={[e.textoPuntajeInsignia, { color: colorPuntaje }]}>{etiquetaPuntaje}</Text>
+            </View>
+            <View style={e.desgloseCompacto}>
+              <BarraPuntajeMini icono="❤️" puntaje={puntajeRC} color={Colores.corazon} />
+              <BarraPuntajeMini icono="💧" puntaje={puntajeO2} color={Colores.oxigeno} />
+              <BarraPuntajeMini icono="🌡️" puntaje={puntajeTemp} color={Colores.temperatura} />
+            </View>
+          </View>
         </View>
       </Animated.View>
 
-      {/* ── GRÁFICOS DETALLADOS ── */}
-      <View style={e.seccionGraficos}>
+      {/* ── TARJETAS DE TENDENCIA ── */}
+      <View style={e.seccion}>
         <View style={e.encabezadoSeccion}>
-          <Text style={e.tituloSeccion}>Historial detallado</Text>
-          <Text style={e.subtituloSeccion}>Últimas {corteMap[periodo]} lecturas</Text>
+          <Text style={e.tituloSeccion}>Tendencias</Text>
+          <Text style={e.subtituloSeccion}>Comparativa del período</Text>
         </View>
-
-        {signosVitales.map(sv => (
-          <View key={sv.clave} style={e.bloqueGrafico}>
-            {/* Mini encabezado del gráfico */}
-            <View style={e.encabezadoGrafico}>
-              <View style={e.filaIconoTitulo}>
-                <View style={[e.fondoIcono, { backgroundColor: sv.color + '15' }]}>
-                  <Text style={e.emojiIcono}>{sv.icono}</Text>
-                </View>
-                <View>
-                  <Text style={e.tituloGrafico}>{sv.titulo}</Text>
-                  <Text style={[e.valorActual, { color: sv.color }]}>
-                    {sv.decimales > 0 ? sv.actual.toFixed(sv.decimales) : sv.actual}
-                    <Text style={e.unidadActual}> {sv.unidad}</Text>
-                  </Text>
-                </View>
-              </View>
-              <View style={e.miniEstadisticas}>
-                <MiniStat etiqueta="Prom" valor={`${sv.prom}`} color={sv.color} />
-                <MiniStat etiqueta="Máx" valor={`${sv.max}`} color={Colores.peligro} />
-                <MiniStat etiqueta="Mín" valor={`${sv.min}`} color={Colores.oxigeno} />
-              </View>
-            </View>
-            <GraficoDetallado
-              datos={sv.datos}
-              horas={sv.horas}
-              color={sv.color}
-              degradado={sv.degradado}
-              normalMin={sv.normalMin}
-              normalMax={sv.normalMax}
-              unidad={sv.unidad}
-              decimales={sv.decimales}
-            />
-          </View>
-        ))}
+        <View style={e.filaTendencias}>
+          <TarjetaTendencia
+            icono="❤️"
+            titulo="FC"
+            valor={datos.ritmoCardiaco}
+            unidad="bpm"
+            prom={promedio(datosRC)}
+            tendencia={tendenciaRC}
+            color={Colores.corazon}
+            decimales={0}
+          />
+          <TarjetaTendencia
+            icono="💧"
+            titulo="SpO₂"
+            valor={datos.oxigeno}
+            unidad="%"
+            prom={promedio(datosO2, 1)}
+            tendencia={tendenciaO2}
+            color={Colores.oxigeno}
+            decimales={1}
+          />
+          <TarjetaTendencia
+            icono="🌡️"
+            titulo="Temp"
+            valor={datos.temperatura}
+            unidad="°C"
+            prom={promedio(datosTemp, 1)}
+            tendencia={tendenciaTemp}
+            color={Colores.temperatura}
+            decimales={1}
+          />
+        </View>
       </View>
 
-      {/* ── TABLA RESUMEN ── */}
-      <View style={e.seccionTabla}>
-        <Text style={e.tituloSeccion}>Resumen del período</Text>
-        <View style={e.tabla}>
-          <View style={[e.filaTabla, e.filaEncabezadoTabla]}>
-            <Text style={[e.celdaTabla, e.encabezadoTabla, { flex: 2 }]}>Parámetro</Text>
-            <Text style={[e.celdaTabla, e.encabezadoTabla]}>Prom.</Text>
-            <Text style={[e.celdaTabla, e.encabezadoTabla]}>Máx.</Text>
-            <Text style={[e.celdaTabla, e.encabezadoTabla]}>Mín.</Text>
-          </View>
-          {signosVitales.map(sv => (
-            <View key={sv.clave} style={e.filaTabla}>
-              <View style={[e.celdaTabla, { flex: 2, flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
-                <Text style={{ fontSize: 13 }}>{sv.icono}</Text>
-                <Text style={[e.textoCelda, { color: sv.color, fontWeight: '700' }]}>{sv.titulo}</Text>
-              </View>
-              <Text style={[e.celdaTabla, e.textoCelda]}>{sv.prom} {sv.unidad}</Text>
-              <Text style={[e.celdaTabla, e.textoCelda, { color: Colores.peligro }]}>{sv.max} {sv.unidad}</Text>
-              <Text style={[e.celdaTabla, e.textoCelda, { color: Colores.oxigeno }]}>{sv.min} {sv.unidad}</Text>
-            </View>
-          ))}
+      {/* ── DISTRIBUCIÓN POR ZONAS ── */}
+      <View style={e.seccion}>
+        <View style={e.encabezadoSeccion}>
+          <Text style={e.tituloSeccion}>Tiempo en zonas</Text>
+          <Text style={e.subtituloSeccion}>% en cada nivel</Text>
         </View>
+        <View style={e.tarjetaZonas}>
+          <BarraZonas etiqueta="Ritmo cardíaco" icono="❤️" zonas={zonasRC} />
+          <View style={e.divisorZonas} />
+          <BarraZonas etiqueta="Oxigenación" icono="💧" zonas={zonasO2} />
+          <View style={e.divisorZonas} />
+          <BarraZonas etiqueta="Temperatura" icono="🌡️" zonas={zonasTemp} />
+          <View style={e.leyendaZonas}>
+            <View style={e.itemLeyenda}>
+              <View style={[e.puntoLeyenda, { backgroundColor: Colores.seguro }]} />
+              <Text style={e.textoLeyenda}>Normal</Text>
+            </View>
+            <View style={e.itemLeyenda}>
+              <View style={[e.puntoLeyenda, { backgroundColor: Colores.advertencia }]} />
+              <Text style={e.textoLeyenda}>Precaución</Text>
+            </View>
+            <View style={e.itemLeyenda}>
+              <View style={[e.puntoLeyenda, { backgroundColor: Colores.peligro }]} />
+              <Text style={e.textoLeyenda}>Alerta</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* ── DISTRIBUCIÓN DE ACTIVIDAD ── */}
+      <View style={e.seccion}>
+        <View style={e.encabezadoSeccion}>
+          <Text style={e.tituloSeccion}>Patrón de actividad</Text>
+          <Text style={e.subtituloSeccion}>Basado en ritmo cardíaco</Text>
+        </View>
+        <View style={e.tarjetaActividad}>
+          <View style={e.filaActividadPrincipal}>
+            <GraficoDonut distribucion={actividadDist} />
+            <View style={e.listaActividad}>
+              <ItemActividad icono="😴" etiqueta="Dormido" porcentaje={actividadDist.dormido} color="#8B5CF6" />
+              <ItemActividad icono="😊" etiqueta="Tranquilo" porcentaje={actividadDist.tranquilo} color={Colores.seguro} />
+              <ItemActividad icono="🙌" etiqueta="Activo" porcentaje={actividadDist.activo} color={Colores.actividad} />
+              <ItemActividad icono="😢" etiqueta="Llorando" porcentaje={actividadDist.llorando} color={Colores.peligro} />
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* ── EVENTOS / ALERTAS ── */}
+      <View style={e.seccion}>
+        <View style={e.encabezadoSeccion}>
+          <Text style={e.tituloSeccion}>Eventos recientes</Text>
+          <Text style={e.subtituloSeccion}>Lecturas fuera de rango</Text>
+        </View>
+        {eventos.length === 0 ? (
+          <View style={e.tarjetaSinEventos}>
+            <Text style={e.iconoSinEventos}>✅</Text>
+            <Text style={e.tituloSinEventos}>Sin eventos</Text>
+            <Text style={e.textoSinEventos}>
+              No se han detectado lecturas fuera de rango en este período. ¡Todo en orden!
+            </Text>
+          </View>
+        ) : (
+          <View style={e.tarjetaEventos}>
+            {eventos.map((ev, i) => (
+              <View key={`${ev.hora}-${ev.signo}-${i}`}>
+                <View style={e.filaEvento}>
+                  <View style={e.lineaTiempo}>
+                    <View style={[
+                      e.puntoTimeline,
+                      { backgroundColor: ev.tipo === 'alerta' ? Colores.peligro : Colores.advertencia },
+                    ]} />
+                    {i < eventos.length - 1 && <View style={e.lineaTimeline} />}
+                  </View>
+                  <View style={e.contenidoEvento}>
+                    <View style={e.filaEventoSuperior}>
+                      <Text style={e.horaEvento}>{ev.hora}</Text>
+                      <View style={[e.badgeTipo, {
+                        backgroundColor: ev.tipo === 'alerta' ? Colores.peligro + '15' : Colores.advertencia + '15',
+                      }]}>
+                        <Text style={[e.textoBadgeTipo, {
+                          color: ev.tipo === 'alerta' ? Colores.peligro : Colores.advertencia,
+                        }]}>
+                          {ev.tipo === 'alerta' ? '⚠ Alerta' : '⚡ Precaución'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={e.descripcionEvento}>
+                      {ev.icono} {ev.signo}: <Text style={{ color: ev.color, fontWeight: '800' }}>{ev.valor}</Text>
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
+      {/* ── INSIGHTS DE SALUD ── */}
+      <View style={e.seccion}>
+        <View style={e.encabezadoSeccion}>
+          <Text style={e.tituloSeccion}>Análisis inteligente</Text>
+          <Text style={e.subtituloSeccion}>Basado en los datos</Text>
+        </View>
+        {insights.map((insight, i) => (
+          <View key={i} style={[e.tarjetaInsight, { borderLeftColor: insight.color }]}>
+            <View style={e.filaInsightTop}>
+              <Text style={e.iconoInsight}>{insight.icono}</Text>
+              <Text style={[e.tituloInsight, { color: insight.color }]}>{insight.titulo}</Text>
+            </View>
+            <Text style={e.textoInsight}>{insight.texto}</Text>
+          </View>
+        ))}
       </View>
     </ScrollView>
   );
@@ -286,18 +503,9 @@ export default function PantallaEstadisticas() {
 
 // ── Sub-componentes ─────────────────────────────────────────────
 
-function MiniStat({ etiqueta, valor, color }: { etiqueta: string; valor: string; color: string }) {
-  return (
-    <View style={e.miniStatBox}>
-      <Text style={[e.miniStatValor, { color }]}>{valor}</Text>
-      <Text style={e.miniStatEtiqueta}>{etiqueta}</Text>
-    </View>
-  );
-}
-
 function CirculoPuntaje({ puntaje, color }: { puntaje: number; color: string }) {
-  const tam = 150;
-  const radio = 60;
+  const tam = 110;
+  const radio = 44;
   const cx = tam / 2;
   const cy = tam / 2;
   const circ = 2 * Math.PI * radio;
@@ -306,12 +514,12 @@ function CirculoPuntaje({ puntaje, color }: { puntaje: number; color: string }) 
   return (
     <View style={e.envolturioCirculo}>
       <Svg width={tam} height={tam}>
-        <Circle cx={cx} cy={cy} r={radio} fill="none" stroke={Colores.borde} strokeWidth={10} />
+        <Circle cx={cx} cy={cy} r={radio} fill="none" stroke={Colores.borde} strokeWidth={9} />
         <Circle
           cx={cx} cy={cy} r={radio}
           fill="none"
           stroke={color}
-          strokeWidth={10}
+          strokeWidth={9}
           strokeDasharray={`${lleno} ${circ}`}
           strokeLinecap="round"
           rotation={-90}
@@ -320,131 +528,154 @@ function CirculoPuntaje({ puntaje, color }: { puntaje: number; color: string }) 
       </Svg>
       <View style={e.centroCirculo}>
         <Text style={[e.numeroPuntaje, { color }]}>{puntaje}</Text>
-        <Text style={[e.etiquetaPuntajeCirculo, { color: color + 'AA' }]}>/ 100</Text>
+        <Text style={[e.etiquetaPuntajeCirculo, { color: color + 'AA' }]}>/100</Text>
       </View>
     </View>
   );
 }
 
-function BarraPuntaje({ etiqueta, icono, puntaje, color }: { etiqueta: string; icono: string; puntaje: number; color: string }) {
+function BarraPuntajeMini({ icono, puntaje, color }: { icono: string; puntaje: number; color: string }) {
   return (
-    <View style={e.filaBarraPuntaje}>
-      <Text style={e.iconoBarra}>{icono}</Text>
-      <Text style={e.etiquetaBarra}>{etiqueta}</Text>
-      <View style={e.pistaBarra}>
-        <View style={[e.rellenoBarra, { width: `${puntaje}%`, backgroundColor: color }]} />
+    <View style={e.filaBarraMini}>
+      <Text style={e.iconoBarraMini}>{icono}</Text>
+      <View style={e.pistaBarraMini}>
+        <View style={[e.rellenoBarraMini, { width: `${puntaje}%`, backgroundColor: color }]} />
       </View>
-      <Text style={[e.valorBarra, { color }]}>{puntaje}</Text>
+      <Text style={[e.valorBarraMini, { color }]}>{puntaje}</Text>
     </View>
   );
 }
 
-function GraficoDetallado({
-  datos, horas, color, degradado, normalMin, normalMax, unidad, decimales,
+function TarjetaTendencia({
+  icono, titulo, valor, unidad, prom, tendencia, color, decimales,
 }: {
-  datos: number[];
-  horas: string[];
-  color: string;
-  degradado: [string, string];
-  normalMin: number;
-  normalMax: number;
-  unidad: string;
-  decimales: number;
+  icono: string; titulo: string; valor: number; unidad: string;
+  prom: number; tendencia: 'subiendo' | 'bajando' | 'estable';
+  color: string; decimales: number;
 }) {
-  if (!datos || datos.length < 2) return null;
+  const flechas = { subiendo: '↑', bajando: '↓', estable: '→' };
+  const colorTendencia = tendencia === 'estable' ? Colores.seguro
+    : tendencia === 'subiendo' ? Colores.advertencia
+    : Colores.oxigeno;
+  const etiquetaTendencia = { subiendo: 'Subiendo', bajando: 'Bajando', estable: 'Estable' };
 
-  const anchoGrafico = ANCHO_PANTALLA - 40;
-  const altoGrafico = 180;
-  const margenIzq = 40;
-  const margenDer = 10;
-  const margenSup = 14;
-  const margenInf = 24;
-  const anchoInterno = anchoGrafico - margenIzq - margenDer;
-  const altoInterno = altoGrafico - margenSup - margenInf;
-
-  const minDatos = Math.min(...datos, normalMin);
-  const maxDatos = Math.max(...datos, normalMax);
-  const relleno = (maxDatos - minDatos) * 0.18 || 2;
-  const yMin = minDatos - relleno;
-  const yMax = maxDatos + relleno;
-  const rangoY = yMax - yMin;
-
-  const aX = (i: number) => margenIzq + (i / (datos.length - 1)) * anchoInterno;
-  const aY = (v: number) => margenSup + altoInterno - ((v - yMin) / rangoY) * altoInterno;
-
-  // Ticks del eje Y (4 líneas)
-  const ticksY: number[] = [];
-  for (let i = 0; i <= 3; i++) ticksY.push(yMin + (rangoY / 3) * i);
-
-  // Etiquetas del eje X
-  const pasoX = Math.max(1, Math.floor(datos.length / 5));
-  const etiquetasX: { i: number; txt: string }[] = [];
-  for (let i = 0; i < datos.length; i += pasoX) etiquetasX.push({ i, txt: horas[i] || '' });
-  if (etiquetasX[etiquetasX.length - 1]?.i !== datos.length - 1) {
-    etiquetasX.push({ i: datos.length - 1, txt: horas[datos.length - 1] || '' });
-  }
-
-  const yNormalMin = aY(normalMin);
-  const yNormalMax = aY(normalMax);
-  const puntos = datos.map((v, i) => `${aX(i)},${aY(v)}`).join(' ');
-  const areaLlena = puntos + ` ${aX(datos.length - 1)},${margenSup + altoInterno} ${aX(0)},${margenSup + altoInterno}`;
+  const diff = valor - prom;
+  const diffStr = diff >= 0 ? `+${decimales > 0 ? diff.toFixed(1) : Math.round(diff)}`
+    : `${decimales > 0 ? diff.toFixed(1) : Math.round(diff)}`;
 
   return (
-    <View style={[e.tarjetaGrafico, { width: anchoGrafico }]}>
-      <Svg width={anchoGrafico} height={altoGrafico}>
-        <Defs>
-          <SvgGrad id={`areaGrad_${color}`} x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%" stopColor={color} stopOpacity={0.15} />
-            <Stop offset="100%" stopColor={color} stopOpacity={0.01} />
-          </SvgGrad>
-        </Defs>
+    <View style={[e.tarjetaTendencia, { borderTopColor: color }]}>
+      <Text style={e.iconoTendencia}>{icono}</Text>
+      <Text style={e.tituloTendencia}>{titulo}</Text>
+      <Text style={[e.valorTendencia, { color }]}>
+        {decimales > 0 ? valor.toFixed(decimales) : valor}
+        <Text style={e.unidadTendencia}> {unidad}</Text>
+      </Text>
+      <View style={e.filaComparativa}>
+        <Text style={[e.diffTendencia, { color: colorTendencia }]}>
+          {diffStr}
+        </Text>
+        <Text style={e.vsPromedio}>vs prom</Text>
+      </View>
+      <View style={[e.badgeTendencia, { backgroundColor: colorTendencia + '15' }]}>
+        <Text style={[e.textoTendencia, { color: colorTendencia }]}>
+          {flechas[tendencia]} {etiquetaTendencia[tendencia]}
+        </Text>
+      </View>
+    </View>
+  );
+}
 
-        {/* Líneas de cuadrícula */}
-        {ticksY.map((tick, i) => (
-          <Line key={`g${i}`} x1={margenIzq} y1={aY(tick)} x2={margenIzq + anchoInterno} y2={aY(tick)} stroke={Colores.borde} strokeWidth={0.7} />
+function BarraZonas({
+  etiqueta, icono, zonas,
+}: {
+  etiqueta: string; icono: string;
+  zonas: { normal: number; precaucion: number; alerta: number };
+}) {
+  return (
+    <View style={e.filaZona}>
+      <View style={e.infoZona}>
+        <Text style={e.iconoZona}>{icono}</Text>
+        <Text style={e.etiquetaZona}>{etiqueta}</Text>
+      </View>
+      <View style={e.barraZonaContenedor}>
+        <View style={e.barraZonaPista}>
+          {zonas.normal > 0 && (
+            <View style={[e.segmentoZona, { flex: zonas.normal, backgroundColor: Colores.seguro }]} />
+          )}
+          {zonas.precaucion > 0 && (
+            <View style={[e.segmentoZona, { flex: zonas.precaucion, backgroundColor: Colores.advertencia }]} />
+          )}
+          {zonas.alerta > 0 && (
+            <View style={[e.segmentoZona, { flex: zonas.alerta, backgroundColor: Colores.peligro }]} />
+          )}
+        </View>
+        <View style={e.filaPorcentajes}>
+          <Text style={[e.porcentajeZona, { color: Colores.seguro }]}>{zonas.normal}%</Text>
+          {zonas.precaucion > 0 && (
+            <Text style={[e.porcentajeZona, { color: Colores.advertencia }]}>{zonas.precaucion}%</Text>
+          )}
+          {zonas.alerta > 0 && (
+            <Text style={[e.porcentajeZona, { color: Colores.peligro }]}>{zonas.alerta}%</Text>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function GraficoDonut({ distribucion }: { distribucion: { dormido: number; tranquilo: number; activo: number; llorando: number } }) {
+  const tam = 120;
+  const radio = 42;
+  const grosor = 14;
+  const cx = tam / 2;
+  const cy = tam / 2;
+  const circ = 2 * Math.PI * radio;
+
+  const colores = ['#8B5CF6', Colores.seguro, Colores.actividad, Colores.peligro];
+  const valores = [distribucion.dormido, distribucion.tranquilo, distribucion.activo, distribucion.llorando];
+
+  let acumulado = 0;
+  const segmentos = valores.map((val, i) => {
+    const longitud = (val / 100) * circ;
+    const offset = (acumulado / 100) * circ;
+    acumulado += val;
+    return { longitud, offset, color: colores[i], valor: val };
+  }).filter(s => s.valor > 0);
+
+  return (
+    <View style={e.envolturioDonut}>
+      <Svg width={tam} height={tam}>
+        <Circle cx={cx} cy={cy} r={radio} fill="none" stroke={Colores.borde} strokeWidth={grosor} />
+        {segmentos.map((seg, i) => (
+          <Circle
+            key={i}
+            cx={cx} cy={cy} r={radio}
+            fill="none"
+            stroke={seg.color}
+            strokeWidth={grosor}
+            strokeDasharray={`${seg.longitud} ${circ - seg.longitud}`}
+            strokeDashoffset={-seg.offset}
+            strokeLinecap="butt"
+            rotation={-90}
+            origin={`${cx},${cy}`}
+          />
         ))}
-
-        {/* Etiquetas eje Y */}
-        {ticksY.map((tick, i) => (
-          <SvgText key={`ey${i}`} x={margenIzq - 5} y={aY(tick) + 4} fontSize={9} fill={Colores.textoClaro} textAnchor="end" fontWeight="600">
-            {decimales > 0 ? tick.toFixed(1) : Math.round(tick)}
-          </SvgText>
-        ))}
-
-        {/* Etiquetas eje X */}
-        {etiquetasX.map(({ i, txt }) => (
-          <SvgText key={`ex${i}`} x={aX(i)} y={altoGrafico - 4} fontSize={8} fill={Colores.textoClaro} textAnchor="middle" fontWeight="500">
-            {txt}
-          </SvgText>
-        ))}
-
-        {/* Zona normal */}
-        <Rect x={margenIzq} y={yNormalMax} width={anchoInterno} height={Math.max(0, yNormalMin - yNormalMax)} fill={color} opacity={0.06} rx={3} />
-        <Line x1={margenIzq} y1={yNormalMax} x2={margenIzq + anchoInterno} y2={yNormalMax} stroke={color} strokeWidth={0.8} strokeDasharray="5,3" strokeOpacity={0.4} />
-        <Line x1={margenIzq} y1={yNormalMin} x2={margenIzq + anchoInterno} y2={yNormalMin} stroke={color} strokeWidth={0.8} strokeDasharray="5,3" strokeOpacity={0.4} />
-
-        {/* Relleno bajo la línea */}
-        <Polyline points={areaLlena} fill={`url(#areaGrad_${color})`} stroke="none" />
-
-        {/* Línea principal */}
-        <Polyline points={puntos} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-
-        {/* Puntos */}
-        {datos.map((v, i) => {
-          const esUltimo = i === datos.length - 1;
-          const fueraRango = v < normalMin || v > normalMax;
-          const colorPunto = fueraRango ? Colores.peligro : color;
-          return (
-            <React.Fragment key={`p${i}`}>
-              <Circle cx={aX(i)} cy={aY(v)} r={esUltimo ? 4 : 2} fill={colorPunto} />
-              {esUltimo && <Circle cx={aX(i)} cy={aY(v)} r={9} fill={colorPunto} opacity={0.12} />}
-              {fueraRango && !esUltimo && (
-                <Circle cx={aX(i)} cy={aY(v)} r={5} fill="none" stroke={Colores.peligro} strokeWidth={1.2} opacity={0.4} />
-              )}
-            </React.Fragment>
-          );
-        })}
       </Svg>
+      <View style={e.centroDonut}>
+        <Text style={e.emojiCentroDonut}>👶</Text>
+      </View>
+    </View>
+  );
+}
+
+function ItemActividad({ icono, etiqueta, porcentaje, color }: { icono: string; etiqueta: string; porcentaje: number; color: string }) {
+  return (
+    <View style={e.filaItemActividad}>
+      <View style={[e.puntoActividad, { backgroundColor: color }]} />
+      <Text style={e.iconoActividad}>{icono}</Text>
+      <Text style={e.etiquetaActividad}>{etiqueta}</Text>
+      <Text style={[e.porcentajeActividad, { color }]}>{porcentaje}%</Text>
     </View>
   );
 }
@@ -493,93 +724,186 @@ const e = StyleSheet.create({
   etiquetaPildora: { fontSize: 13, fontWeight: '600', color: Colores.textoClaro },
   etiquetaPildoraActiva: { color: Colores.primario, fontWeight: '800' },
 
-  // Tarjeta de puntuación
+  // Sección genérica
+  seccion: { paddingHorizontal: 20, marginBottom: 16 },
+  encabezadoSeccion: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 },
+  tituloSeccion: { fontSize: 17, fontWeight: '800', color: Colores.textoOscuro },
+  subtituloSeccion: { fontSize: 12, color: Colores.textoClaro, fontWeight: '500' },
+
+  // Puntuación de bienestar (compacta)
   tarjetaPuntaje: {
     marginHorizontal: 20,
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
-    padding: 22,
+    padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.06,
     shadowRadius: 14,
     elevation: 4,
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  filaPuntajeSuperior: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
-  tituloPuntaje: { fontSize: 17, fontWeight: '800', color: Colores.textoOscuro },
-  subtituloPuntaje: { fontSize: 12, color: Colores.textoClaro, fontWeight: '500', marginTop: 2 },
-  insigniaPuntaje: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 16, borderWidth: 1 },
+  filaPuntajeCompacta: { flexDirection: 'row', alignItems: 'center', gap: 18 },
+  infoPuntaje: { flex: 1, gap: 6 },
+  tituloPuntaje: { fontSize: 16, fontWeight: '800', color: Colores.textoOscuro },
+  insigniaPuntaje: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 14, borderWidth: 1, alignSelf: 'flex-start' },
   textoPuntajeInsignia: { fontSize: 12, fontWeight: '700' },
 
-  seccionCirculo: { alignItems: 'center', marginVertical: 8 },
-  envolturioCirculo: { width: 150, height: 150, alignItems: 'center', justifyContent: 'center' },
+  desgloseCompacto: { gap: 4, marginTop: 4 },
+  filaBarraMini: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  iconoBarraMini: { fontSize: 12, width: 18, textAlign: 'center' },
+  pistaBarraMini: { flex: 1, height: 6, backgroundColor: Colores.borde, borderRadius: 3, overflow: 'hidden' },
+  rellenoBarraMini: { height: '100%', borderRadius: 3 },
+  valorBarraMini: { width: 24, fontSize: 11, fontWeight: '800', textAlign: 'right' },
+
+  envolturioCirculo: { width: 110, height: 110, alignItems: 'center', justifyContent: 'center' },
   centroCirculo: { position: 'absolute', alignItems: 'center' },
-  numeroPuntaje: { fontSize: 44, fontWeight: '900', lineHeight: 48 },
-  etiquetaPuntajeCirculo: { fontSize: 13, fontWeight: '600', marginTop: -2 },
+  numeroPuntaje: { fontSize: 32, fontWeight: '900', lineHeight: 36 },
+  etiquetaPuntajeCirculo: { fontSize: 11, fontWeight: '600', marginTop: -2 },
 
-  desgloseContainer: { gap: 8, marginTop: 8 },
-  filaBarraPuntaje: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  iconoBarra: { fontSize: 14, width: 20, textAlign: 'center' },
-  etiquetaBarra: { width: 100, fontSize: 12, color: Colores.textoMedio, fontWeight: '600' },
-  pistaBarra: { flex: 1, height: 8, backgroundColor: Colores.borde, borderRadius: 4, overflow: 'hidden' },
-  rellenoBarra: { height: '100%', borderRadius: 4 },
-  valorBarra: { width: 28, fontSize: 12, fontWeight: '800', textAlign: 'right' },
+  // Tendencias
+  filaTendencias: { flexDirection: 'row', gap: 10 },
+  tarjetaTendencia: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 14,
+    alignItems: 'center',
+    borderTopWidth: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  iconoTendencia: { fontSize: 22, marginBottom: 4 },
+  tituloTendencia: { fontSize: 11, fontWeight: '700', color: Colores.textoClaro, marginBottom: 4 },
+  valorTendencia: { fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
+  unidadTendencia: { fontSize: 10, fontWeight: '600' },
+  filaComparativa: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 4 },
+  diffTendencia: { fontSize: 12, fontWeight: '800' },
+  vsPromedio: { fontSize: 9, color: Colores.textoClaro, fontWeight: '500' },
+  badgeTendencia: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    marginTop: 6,
+  },
+  textoTendencia: { fontSize: 10, fontWeight: '700' },
 
-  // Gráficos
-  seccionGraficos: { paddingHorizontal: 20, marginBottom: 8 },
-  encabezadoSeccion: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 },
-  tituloSeccion: { fontSize: 17, fontWeight: '800', color: Colores.textoOscuro },
-  subtituloSeccion: { fontSize: 12, color: Colores.textoClaro, fontWeight: '500' },
-
-  bloqueGrafico: {
+  // Zonas
+  tarjetaZonas: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 16,
-    marginBottom: 14,
+    padding: 18,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 10,
     elevation: 3,
   },
-  encabezadoGrafico: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  filaIconoTitulo: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  fondoIcono: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  emojiIcono: { fontSize: 18 },
-  tituloGrafico: { fontSize: 13, fontWeight: '700', color: Colores.textoOscuro },
-  valorActual: { fontSize: 18, fontWeight: '900', letterSpacing: -0.5 },
-  unidadActual: { fontSize: 11, fontWeight: '600' },
-  miniEstadisticas: { flexDirection: 'row', gap: 10 },
-  miniStatBox: { alignItems: 'center' },
-  miniStatValor: { fontSize: 13, fontWeight: '800' },
-  miniStatEtiqueta: { fontSize: 9, color: Colores.textoClaro, fontWeight: '600' },
+  filaZona: { marginBottom: 14 },
+  infoZona: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  iconoZona: { fontSize: 14 },
+  etiquetaZona: { fontSize: 13, fontWeight: '700', color: Colores.textoOscuro },
+  barraZonaContenedor: {},
+  barraZonaPista: {
+    flexDirection: 'row',
+    height: 12,
+    borderRadius: 6,
+    overflow: 'hidden',
+    gap: 2,
+  },
+  segmentoZona: { borderRadius: 4 },
+  filaPorcentajes: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
+  porcentajeZona: { fontSize: 10, fontWeight: '700' },
+  divisorZonas: { height: 1, backgroundColor: Colores.divisor },
+  leyendaZonas: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: Colores.divisor,
+  },
+  itemLeyenda: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  puntoLeyenda: { width: 8, height: 8, borderRadius: 4 },
+  textoLeyenda: { fontSize: 11, fontWeight: '600', color: Colores.textoClaro },
 
-  tarjetaGrafico: { alignSelf: 'center' },
+  // Actividad
+  tarjetaActividad: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  filaActividadPrincipal: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  envolturioDonut: { width: 120, height: 120, alignItems: 'center', justifyContent: 'center' },
+  centroDonut: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  emojiCentroDonut: { fontSize: 28 },
+  listaActividad: { flex: 1, gap: 10 },
+  filaItemActividad: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  puntoActividad: { width: 10, height: 10, borderRadius: 5 },
+  iconoActividad: { fontSize: 16 },
+  etiquetaActividad: { flex: 1, fontSize: 13, fontWeight: '600', color: Colores.textoMedio },
+  porcentajeActividad: { fontSize: 14, fontWeight: '800' },
 
-  // Tabla resumen
-  seccionTabla: { paddingHorizontal: 20, marginTop: 4, marginBottom: 8 },
-  tabla: {
+  // Eventos
+  tarjetaEventos: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  tarjetaSinEventos: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  iconoSinEventos: { fontSize: 36, marginBottom: 8 },
+  tituloSinEventos: { fontSize: 16, fontWeight: '800', color: Colores.textoOscuro, marginBottom: 4 },
+  textoSinEventos: { fontSize: 13, color: Colores.textoClaro, textAlign: 'center', fontWeight: '500', lineHeight: 18 },
+  filaEvento: { flexDirection: 'row', gap: 12 },
+  lineaTiempo: { width: 20, alignItems: 'center' },
+  puntoTimeline: { width: 12, height: 12, borderRadius: 6, marginTop: 4 },
+  lineaTimeline: { width: 2, flex: 1, backgroundColor: Colores.borde, marginVertical: 4 },
+  contenidoEvento: { flex: 1, paddingBottom: 16 },
+  filaEventoSuperior: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  horaEvento: { fontSize: 13, fontWeight: '800', color: Colores.textoOscuro },
+  badgeTipo: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  textoBadgeTipo: { fontSize: 10, fontWeight: '700' },
+  descripcionEvento: { fontSize: 13, color: Colores.textoMedio, fontWeight: '600' },
+
+  // Insights
+  tarjetaInsight: {
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
-    overflow: 'hidden',
-    marginTop: 10,
+    padding: 16,
+    marginBottom: 10,
+    borderLeftWidth: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.04,
     shadowRadius: 6,
     elevation: 2,
   },
-  filaTabla: {
-    flexDirection: 'row',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: Colores.divisor,
-    alignItems: 'center',
-  },
-  filaEncabezadoTabla: { backgroundColor: Colores.fondoTarjeta2 },
-  celdaTabla: { flex: 1, justifyContent: 'center' },
-  encabezadoTabla: { fontSize: 11, fontWeight: '700', color: Colores.textoOscuro, textAlign: 'center' },
-  textoCelda: { fontSize: 11, color: Colores.textoMedio, textAlign: 'center', fontWeight: '600' },
+  filaInsightTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  iconoInsight: { fontSize: 18 },
+  tituloInsight: { fontSize: 14, fontWeight: '800' },
+  textoInsight: { fontSize: 13, color: Colores.textoMedio, fontWeight: '500', lineHeight: 19 },
 });
