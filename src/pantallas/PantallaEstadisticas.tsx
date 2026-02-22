@@ -1,18 +1,28 @@
 /**
- * PantallaEstadisticas — Pantalla de análisis de salud.
- * Contenido diferenciado: tendencias, distribución por zonas,
- * patrón de actividad, timeline de eventos e insights de salud.
+ * PantallaEstadisticas — Análisis de salud interactivo.
+ * Cada sección es expandible con detalle clínico contextual.
+ * El análisis inteligente se despliega desde el widget de bienestar.
  */
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity,
-  Animated,
+  Animated, LayoutAnimation, Platform, UIManager,
 } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { useDatosSensor } from '../hooks/useDatosSensor';
 import { Colores } from '../constantes/colores';
 
+// Habilitar LayoutAnimation en Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 const { width: ANCHO_PANTALLA } = Dimensions.get('window');
+const ANIM_CONFIG = LayoutAnimation.create(
+  280,
+  LayoutAnimation.Types.easeInEaseOut,
+  LayoutAnimation.Properties.opacity,
+);
 
 type Periodo = '1h' | '6h' | '24h';
 const PERIODOS: { clave: Periodo; etiqueta: string }[] = [
@@ -27,6 +37,12 @@ const promedio = (arr: number[], dec = 0) => {
   if (!arr.length) return 0;
   const v = arr.reduce((a, b) => a + b, 0) / arr.length;
   return dec > 0 ? parseFloat(v.toFixed(dec)) : Math.round(v);
+};
+
+const desviacion = (arr: number[]) => {
+  if (arr.length < 2) return 0;
+  const prom = promedio(arr, 2);
+  return Math.sqrt(arr.reduce((sum, v) => sum + Math.pow(v - prom, 2), 0) / arr.length);
 };
 
 const calcularTendencia = (datos: number[]): 'subiendo' | 'bajando' | 'estable' => {
@@ -56,13 +72,31 @@ interface EventoSalud {
   valor: string;
   icono: string;
   color: string;
+  detalle: string;
 }
+
+// ── Hook para toggle animado ────────────────────────────────────
+const useToggle = (inicial = false): [boolean, () => void] => {
+  const [abierto, setAbierto] = useState(inicial);
+  const toggle = useCallback(() => {
+    LayoutAnimation.configureNext(ANIM_CONFIG);
+    setAbierto(prev => !prev);
+  }, []);
+  return [abierto, toggle];
+};
 
 // ── Pantalla principal ──────────────────────────────────────────
 
 export default function PantallaEstadisticas() {
   const { datos, historial } = useDatosSensor();
   const [periodo, setPeriodo] = useState<Periodo>('24h');
+
+  // Estados de expansión
+  const [bienestarAbierto, toggleBienestar] = useToggle();
+  const [tendenciasAbierto, toggleTendencias] = useToggle();
+  const [zonasAbierto, toggleZonas] = useToggle();
+  const [actividadAbierto, toggleActividad] = useToggle();
+  const [eventosAbierto, toggleEventos] = useToggle();
 
   // Animaciones
   const animEntrada = useRef(new Animated.Value(0)).current;
@@ -110,14 +144,14 @@ export default function PantallaEstadisticas() {
   const tendenciaTemp = calcularTendencia(datosTemp);
 
   // ── Distribución por zonas
-  const calcularZonas = (datos: number[], normalMin: number, normalMax: number, alertaMin: number, alertaMax: number) => {
+  const calcularZonas = (arr: number[], normalMin: number, normalMax: number, alertaMin: number, alertaMax: number) => {
     let normal = 0, precaucion = 0, alerta = 0;
-    datos.forEach(v => {
+    arr.forEach(v => {
       if (v >= normalMin && v <= normalMax) normal++;
       else if (v < alertaMin || v > alertaMax) alerta++;
       else precaucion++;
     });
-    const total = datos.length || 1;
+    const total = arr.length || 1;
     return {
       normal: Math.round((normal / total) * 100),
       precaucion: Math.round((precaucion / total) * 100),
@@ -147,6 +181,7 @@ export default function PantallaEstadisticas() {
     const lista: EventoSalud[] = [];
     datosCorte.forEach(h => {
       if (h.ritmoCardiaco < 100 || h.ritmoCardiaco > 170) {
+        const esBajo = h.ritmoCardiaco < 100;
         lista.push({
           hora: h.hora,
           tipo: h.ritmoCardiaco < 90 || h.ritmoCardiaco > 180 ? 'alerta' : 'precaución',
@@ -154,6 +189,9 @@ export default function PantallaEstadisticas() {
           valor: `${h.ritmoCardiaco} bpm`,
           icono: '❤️',
           color: Colores.corazon,
+          detalle: esBajo
+            ? `El ritmo cardíaco de ${h.ritmoCardiaco} bpm está por debajo del rango normal neonatal (100–160 bpm). La bradicardia neonatal puede requerir evaluación si es persistente.`
+            : `El ritmo cardíaco de ${h.ritmoCardiaco} bpm supera el rango normal neonatal (100–160 bpm). La taquicardia puede estar asociada a actividad, llanto o fiebre.`,
         });
       }
       if (h.oxigeno < 95) {
@@ -164,9 +202,11 @@ export default function PantallaEstadisticas() {
           valor: `${h.oxigeno}%`,
           icono: '💧',
           color: Colores.oxigeno,
+          detalle: `Una SpO₂ de ${h.oxigeno}% está por debajo del umbral ideal (≥95%). Valores inferiores a 93% requieren atención inmediata. Verifique la posición del sensor y la vía aérea.`,
         });
       }
       if (h.temperatura < 36.5 || h.temperatura > 37.5) {
+        const esBaja = h.temperatura < 36.5;
         lista.push({
           hora: h.hora,
           tipo: h.temperatura < 35.5 || h.temperatura > 38.0 ? 'alerta' : 'precaución',
@@ -174,102 +214,206 @@ export default function PantallaEstadisticas() {
           valor: `${h.temperatura}°C`,
           icono: '🌡️',
           color: Colores.temperatura,
+          detalle: esBaja
+            ? `Temperatura de ${h.temperatura}°C. La hipotermia neonatal (<36.5°C) puede comprometer funciones metabólicas. Asegure un ambiente térmico adecuado.`
+            : `Temperatura de ${h.temperatura}°C. La hipertermia neonatal (>37.5°C) puede indicar infección, sobrecalentamiento ambiental o deshidratación.`,
         });
       }
     });
-    return lista.slice(-8).reverse();
+    return lista.slice(-10).reverse();
   }, [datosCorte]);
 
   // ── Insights de salud
   const insights = useMemo(() => {
-    const lista: { icono: string; titulo: string; texto: string; color: string }[] = [];
+    const lista: { icono: string; titulo: string; texto: string; color: string; recomendacion: string }[] = [];
 
-    // Estabilidad del ritmo cardíaco
-    const desviacionRC = datosRC.length > 1
-      ? Math.sqrt(datosRC.reduce((sum, v) => sum + Math.pow(v - promedio(datosRC), 2), 0) / datosRC.length)
-      : 0;
+    const desviacionRC = desviacion(datosRC);
     if (desviacionRC < 8) {
       lista.push({
         icono: '💚',
         titulo: 'Ritmo cardíaco estable',
-        texto: `La variabilidad del ritmo cardíaco es baja (±${Math.round(desviacionRC)} bpm), lo que indica un estado tranquilo y saludable.`,
+        texto: `Variabilidad baja (±${Math.round(desviacionRC)} bpm). Indica un estado fisiológico equilibrado y confortable.`,
         color: Colores.seguro,
+        recomendacion: 'Continúe manteniendo un ambiente tranquilo. La estabilidad cardíaca es indicador de bienestar neonatal.',
       });
     } else if (desviacionRC > 15) {
       lista.push({
         icono: '💛',
-        titulo: 'Variabilidad cardíaca alta',
-        texto: `Se detectó variabilidad elevada (±${Math.round(desviacionRC)} bpm). Puede indicar períodos alternos de actividad y reposo.`,
+        titulo: 'Variabilidad cardíaca elevada',
+        texto: `Desviación de ±${Math.round(desviacionRC)} bpm. Puede reflejar ciclos de sueño-vigilia o episodios de llanto.`,
         color: Colores.advertencia,
+        recomendacion: 'Observe si coincide con cambios de actividad. Si es persistente sin causa aparente, consulte al pediatra.',
       });
     }
 
-    // Oxigenación
     const minO2 = datosO2.length ? Math.min(...datosO2) : 98;
+    const maxO2 = datosO2.length ? Math.max(...datosO2) : 98;
     if (minO2 >= 96) {
       lista.push({
         icono: '🫁',
-        titulo: 'Oxigenación excelente',
-        texto: 'La SpO₂ se ha mantenido por encima de 96% durante todo el período. Excelente función respiratoria.',
+        titulo: 'Función respiratoria óptima',
+        texto: `SpO₂ sostenida entre ${minO2}% y ${maxO2}%. La oxigenación se ha mantenido consistentemente en niveles saludables.`,
         color: Colores.seguro,
+        recomendacion: 'No se requieren acciones. La oxigenación es adecuada para el desarrollo neonatal.',
       });
     } else if (minO2 < 94) {
       lista.push({
         icono: '⚠️',
-        titulo: 'Revisar oxigenación',
-        texto: `Se registraron lecturas de SpO₂ de ${minO2}%. Considere verificar la posición del sensor y consultar al pediatra.`,
+        titulo: 'Oxigenación a vigilar',
+        texto: `Se registraron valores de SpO₂ de ${minO2}%. Los neonatos requieren ≥95% para una oxigenación tisular adecuada.`,
         color: Colores.peligro,
+        recomendacion: 'Verifique la posición del sensor oxímetro. Si los valores persisten bajo 94%, contacte a su profesional de salud.',
       });
     }
 
-    // Temperatura
     const maxTemp = datosTemp.length ? Math.max(...datosTemp) : 36.8;
     const minTemp = datosTemp.length ? Math.min(...datosTemp) : 36.8;
     if (maxTemp <= 37.5 && minTemp >= 36.5) {
       lista.push({
         icono: '🌟',
-        titulo: 'Temperatura ideal',
-        texto: `La temperatura se ha mantenido en el rango ideal (${minTemp.toFixed(1)}°C – ${maxTemp.toFixed(1)}°C) durante todo el período.`,
+        titulo: 'Termorregulación adecuada',
+        texto: `Rango registrado: ${minTemp.toFixed(1)}°C – ${maxTemp.toFixed(1)}°C. Se mantiene dentro de los parámetros de normotermia neonatal.`,
         color: Colores.seguro,
+        recomendacion: 'La termorregulación es correcta. Mantenga la temperatura ambiental entre 22–26°C.',
       });
     } else if (maxTemp > 37.8) {
       lista.push({
         icono: '🔥',
-        titulo: 'Temperatura elevada detectada',
-        texto: `Se registró una temperatura máxima de ${maxTemp.toFixed(1)}°C. Vigile y consulte al pediatra si persiste.`,
+        titulo: 'Temperatura elevada',
+        texto: `Máxima registrada: ${maxTemp.toFixed(1)}°C. Supera el umbral de normotermia neonatal (36.5–37.5°C).`,
         color: Colores.peligro,
+        recomendacion: 'Retire exceso de ropa o coberturas. Si la temperatura supera 38°C o persiste más de 30 minutos, consulte al pediatra.',
+      });
+    } else if (minTemp < 36.0) {
+      lista.push({
+        icono: '❄️',
+        titulo: 'Riesgo de hipotermia',
+        texto: `Mínima registrada: ${minTemp.toFixed(1)}°C. La hipotermia neonatal compromete funciones metabólicas y respiratorias.`,
+        color: Colores.peligro,
+        recomendacion: 'Aplique contacto piel con piel y asegure un ambiente cálido. Si persiste bajo 36°C, busque atención médica.',
       });
     }
 
-    // Patrón de actividad
     if (actividadDist.dormido > 50) {
       lista.push({
         icono: '😴',
-        titulo: 'Mayormente en reposo',
-        texto: `El bebé ha pasado el ${actividadDist.dormido}% del tiempo dormido. Es normal en las primeras semanas de vida.`,
+        titulo: 'Patrón de sueño prolongado',
+        texto: `El bebé ha estado dormido el ${actividadDist.dormido}% del tiempo analizado. Los neonatos duermen entre 16–17 horas diarias.`,
         color: Colores.oxigeno,
+        recomendacion: 'Es un patrón normal en las primeras semanas. Asegúrese de que se alimente cada 2–3 horas durante el sueño.',
       });
     } else if (actividadDist.llorando > 20) {
       lista.push({
         icono: '👶',
         titulo: 'Períodos de llanto frecuentes',
-        texto: `Se detectó llanto en el ${actividadDist.llorando}% del tiempo. Verifique alimentación, pañal y comodidad.`,
+        texto: `Llanto detectado en el ${actividadDist.llorando}% del período. El llanto persistente puede afectar la frecuencia cardíaca y oxigenación.`,
         color: Colores.advertencia,
+        recomendacion: 'Verifique alimentación, pañal, posición y temperatura ambiental. El cólico es causa común en los primeros 3 meses.',
       });
     }
 
-    // Tendencia general
     if (tendenciaRC === 'estable' && tendenciaO2 === 'estable' && tendenciaTemp === 'estable') {
       lista.push({
         icono: '📊',
-        titulo: 'Signos vitales estables',
-        texto: 'Todos los indicadores muestran una tendencia estable durante el período seleccionado.',
+        titulo: 'Estabilidad general confirmada',
+        texto: 'Los tres indicadores principales mantienen una tendencia estable sin variaciones significativas.',
         color: Colores.primario,
+        recomendacion: 'No se requieren acciones. El bebé muestra un estado fisiológico consistente y saludable.',
       });
     }
 
     return lista;
   }, [datosRC, datosO2, datosTemp, actividadDist, tendenciaRC, tendenciaO2, tendenciaTemp]);
+
+  // ── Datos de detalle para tendencias
+  const detalleTendencias = useMemo(() => [
+    {
+      icono: '❤️', titulo: 'Frecuencia cardíaca', color: Colores.corazon,
+      actual: datos.ritmoCardiaco, unidad: 'bpm', decimales: 0,
+      prom: promedio(datosRC), max: datosRC.length ? Math.max(...datosRC) : 0,
+      min: datosRC.length ? Math.min(...datosRC) : 0, desv: Math.round(desviacion(datosRC)),
+      tendencia: tendenciaRC,
+      rangoNormal: '100–160 bpm',
+      explicacion: 'La frecuencia cardíaca neonatal es naturalmente más elevada que en adultos. Varía según el estado de actividad: reposo, vigilia tranquila o llanto.',
+      queSignifica: tendenciaRC === 'estable'
+        ? 'La estabilidad indica un sistema cardiovascular que funciona de manera consistente.'
+        : tendenciaRC === 'subiendo'
+        ? 'Una tendencia ascendente puede estar asociada a mayor actividad, fiebre o estrés. Vigile si coincide con otros cambios.'
+        : 'Una tendencia descendente puede indicar mayor tiempo en reposo o sueño. Es normal si los valores permanecen en rango.',
+    },
+    {
+      icono: '💧', titulo: 'Saturación de oxígeno', color: Colores.oxigeno,
+      actual: datos.oxigeno, unidad: '%', decimales: 1,
+      prom: promedio(datosO2, 1), max: datosO2.length ? Math.max(...datosO2) : 0,
+      min: datosO2.length ? Math.min(...datosO2) : 0, desv: parseFloat(desviacion(datosO2).toFixed(1)),
+      tendencia: tendenciaO2,
+      rangoNormal: '95–100%',
+      explicacion: 'La SpO₂ mide el porcentaje de hemoglobina saturada con oxígeno. En neonatos, valores ≥95% son considerados normales.',
+      queSignifica: tendenciaO2 === 'estable'
+        ? 'Oxigenación constante. La función pulmonar y el intercambio gaseoso son adecuados.'
+        : tendenciaO2 === 'bajando'
+        ? 'Una tendencia descendente requiere atención. Puede indicar obstrucción de vía aérea, congestión nasal o posición inadecuada.'
+        : 'El incremento en SpO₂ es positivo si venía de valores subóptimos. Indica mejoría en la ventilación.',
+    },
+    {
+      icono: '🌡️', titulo: 'Temperatura corporal', color: Colores.temperatura,
+      actual: datos.temperatura, unidad: '°C', decimales: 1,
+      prom: promedio(datosTemp, 1), max: datosTemp.length ? parseFloat(Math.max(...datosTemp).toFixed(1)) : 0,
+      min: datosTemp.length ? parseFloat(Math.min(...datosTemp).toFixed(1)) : 0,
+      desv: parseFloat(desviacion(datosTemp).toFixed(2)),
+      tendencia: tendenciaTemp,
+      rangoNormal: '36.5–37.5°C',
+      explicacion: 'Los neonatos tienen capacidad limitada de termorregulación. La temperatura depende del ambiente, la ropa y el contacto corporal.',
+      queSignifica: tendenciaTemp === 'estable'
+        ? 'La termorregulación es adecuada. El ambiente y la vestimenta mantienen al bebé en normotermia.'
+        : tendenciaTemp === 'subiendo'
+        ? 'El aumento de temperatura puede ser por exceso de abrigo, ambiente cálido o inicio de proceso infeccioso.'
+        : 'El descenso puede indicar exposición a frío o insuficiente abrigo. Asegure un ambiente térmico neutro.',
+    },
+  ], [datos, datosRC, datosO2, datosTemp, tendenciaRC, tendenciaO2, tendenciaTemp]);
+
+  // Info de zonas expandible
+  const infoZonas = [
+    {
+      icono: '❤️', etiqueta: 'Ritmo cardíaco', zonas: zonasRC, color: Colores.corazon,
+      explicacion: 'Normal: 100–160 bpm. Precaución: 90–100 o 160–170 bpm. Alerta: <90 o >170 bpm.',
+      contexto: 'El ritmo cardíaco neonatal varía con la actividad. Durante el sueño profundo puede descender hacia el límite inferior, mientras que el llanto puede elevarlo temporalmente.',
+    },
+    {
+      icono: '💧', etiqueta: 'Oxigenación', zonas: zonasO2, color: Colores.oxigeno,
+      explicacion: 'Normal: ≥95%. Precaución: 93–95%. Alerta: <93%.',
+      contexto: 'La saturación de oxígeno es un indicador directo de la función respiratoria. Descensos transitorios pueden ocurrir durante la alimentación o el sueño, pero deben recuperarse rápidamente.',
+    },
+    {
+      icono: '🌡️', etiqueta: 'Temperatura', zonas: zonasTemp, color: Colores.temperatura,
+      explicacion: 'Normal: 36.5–37.5°C. Precaución: 36.0–36.5°C o 37.5–38.0°C. Alerta: <35.5°C o >38.0°C.',
+      contexto: 'La capacidad de termorregulación neonatal es inmadura. Es importante mantener un ambiente entre 22–26°C y evitar corrientes de aire o exposición solar directa.',
+    },
+  ];
+
+  // Info de actividades expandible
+  const infoActividades = [
+    {
+      icono: '😴', etiqueta: 'Dormido', porcentaje: actividadDist.dormido, color: '#8B5CF6',
+      descripcion: 'FC < 125 bpm. Estado de reposo fisiológico con bajo gasto metabólico.',
+      detalle: 'Los neonatos sanos duermen entre 16–17 horas diarias en ciclos de 2–4 horas. El sueño es esencial para el desarrollo neurológico y la liberación de hormona de crecimiento.',
+    },
+    {
+      icono: '😊', etiqueta: 'Tranquilo', porcentaje: actividadDist.tranquilo, color: Colores.seguro,
+      descripcion: 'FC 125–135 bpm. Vigilia tranquila con actividad motora mínima.',
+      detalle: 'Estado ideal para la interacción y el aprendizaje sensorial. El bebé está alerta pero calmado, con signos vitales estables.',
+    },
+    {
+      icono: '🙌', etiqueta: 'Activo', porcentaje: actividadDist.activo, color: Colores.actividad,
+      descripcion: 'FC 135–150 bpm. Movimiento activo, posiblemente alimentándose.',
+      detalle: 'Períodos de actividad motora, succión o exploración. La frecuencia cardíaca se eleva moderadamente como respuesta fisiológica normal.',
+    },
+    {
+      icono: '😢', etiqueta: 'Llorando', porcentaje: actividadDist.llorando, color: Colores.peligro,
+      descripcion: 'FC > 150 bpm. Llanto activo con elevación de frecuencia cardíaca.',
+      detalle: 'El llanto es la principal forma de comunicación neonatal. Puede indicar hambre, incomodidad, cólico o necesidad de contacto. El llanto prolongado puede afectar temporalmente la SpO₂.',
+    },
+  ];
 
   return (
     <ScrollView style={e.contenedor} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 36 }}>
@@ -322,79 +466,149 @@ export default function PantallaEstadisticas() {
         </View>
       </View>
 
-      {/* ── PUNTUACIÓN DE BIENESTAR (compacto) ── */}
-      <Animated.View style={[e.tarjetaPuntaje, {
-        opacity: animEntrada,
-        transform: [{ translateY: animEntrada.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
-      }]}>
-        <View style={e.filaPuntajeCompacta}>
-          <CirculoPuntaje puntaje={puntajeGeneral} color={colorPuntaje} />
-          <View style={e.infoPuntaje}>
-            <Text style={e.tituloPuntaje}>Índice de bienestar</Text>
-            <View style={[e.insigniaPuntaje, { backgroundColor: colorPuntaje + '18', borderColor: colorPuntaje + '40' }]}>
-              <Text style={[e.textoPuntajeInsignia, { color: colorPuntaje }]}>{etiquetaPuntaje}</Text>
-            </View>
-            <View style={e.desgloseCompacto}>
-              <BarraPuntajeMini icono="❤️" puntaje={puntajeRC} color={Colores.corazon} />
-              <BarraPuntajeMini icono="💧" puntaje={puntajeO2} color={Colores.oxigeno} />
-              <BarraPuntajeMini icono="🌡️" puntaje={puntajeTemp} color={Colores.temperatura} />
+      {/* ═══════════════════════════════════════════════════════
+          1. BIENESTAR + INSIGHTS (expandible)
+          ═══════════════════════════════════════════════════════ */}
+      <TouchableOpacity activeOpacity={0.85} onPress={toggleBienestar}>
+        <Animated.View style={[e.tarjetaPuntaje, {
+          opacity: animEntrada,
+          transform: [{ translateY: animEntrada.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+        }]}>
+          <View style={e.filaPuntajeCompacta}>
+            <CirculoPuntaje puntaje={puntajeGeneral} color={colorPuntaje} />
+            <View style={e.infoPuntaje}>
+              <View style={e.filaTituloChevron}>
+                <Text style={e.tituloPuntaje}>Índice de bienestar</Text>
+                <Text style={e.chevron}>{bienestarAbierto ? '▲' : '▼'}</Text>
+              </View>
+              <View style={[e.insigniaPuntaje, { backgroundColor: colorPuntaje + '18', borderColor: colorPuntaje + '40' }]}>
+                <Text style={[e.textoPuntajeInsignia, { color: colorPuntaje }]}>{etiquetaPuntaje}</Text>
+              </View>
+              <View style={e.desgloseCompacto}>
+                <BarraPuntajeMini icono="❤️" puntaje={puntajeRC} color={Colores.corazon} />
+                <BarraPuntajeMini icono="💧" puntaje={puntajeO2} color={Colores.oxigeno} />
+                <BarraPuntajeMini icono="🌡️" puntaje={puntajeTemp} color={Colores.temperatura} />
+              </View>
             </View>
           </View>
-        </View>
-      </Animated.View>
 
-      {/* ── TARJETAS DE TENDENCIA ── */}
+          {!bienestarAbierto && (
+            <View style={e.pistaExpandir}>
+              <Text style={e.textoExpandir}>Toca para ver análisis inteligente</Text>
+            </View>
+          )}
+
+          {/* ── Insights expandidos ── */}
+          {bienestarAbierto && (
+            <View style={e.contenedorInsights}>
+              <View style={e.divisorInsight} />
+              <View style={e.encabezadoInsights}>
+                <Text style={e.tituloInsightsSeccion}>🧠  Análisis inteligente</Text>
+                <Text style={e.subtituloInsights}>Evaluación basada en los datos del período</Text>
+              </View>
+              {insights.map((insight, i) => (
+                <View key={i} style={[e.tarjetaInsight, { borderLeftColor: insight.color }]}>
+                  <View style={e.filaInsightTop}>
+                    <Text style={e.iconoInsight}>{insight.icono}</Text>
+                    <Text style={[e.tituloInsight, { color: insight.color }]}>{insight.titulo}</Text>
+                  </View>
+                  <Text style={e.textoInsight}>{insight.texto}</Text>
+                  <View style={[e.cajaRecomendacion, { backgroundColor: insight.color + '08', borderColor: insight.color + '20' }]}>
+                    <Text style={e.etiquetaRecomendacion}>💡 Recomendación</Text>
+                    <Text style={e.textoRecomendacion}>{insight.recomendacion}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </Animated.View>
+      </TouchableOpacity>
+
+      {/* ═══════════════════════════════════════════════════════
+          2. TENDENCIAS (expandible)
+          ═══════════════════════════════════════════════════════ */}
       <View style={e.seccion}>
-        <View style={e.encabezadoSeccion}>
-          <Text style={e.tituloSeccion}>Tendencias</Text>
-          <Text style={e.subtituloSeccion}>Comparativa del período</Text>
-        </View>
+        <TouchableOpacity activeOpacity={0.7} onPress={toggleTendencias}>
+          <View style={e.encabezadoSeccionTocable}>
+            <View>
+              <Text style={e.tituloSeccion}>Tendencias</Text>
+              <Text style={e.subtituloSeccion}>Comparativa del período</Text>
+            </View>
+            <View style={e.badgeExpandir}>
+              <Text style={e.textoChevronBadge}>{tendenciasAbierto ? 'Menos ▲' : 'Detalle ▼'}</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
         <View style={e.filaTendencias}>
-          <TarjetaTendencia
-            icono="❤️"
-            titulo="FC"
-            valor={datos.ritmoCardiaco}
-            unidad="bpm"
-            prom={promedio(datosRC)}
-            tendencia={tendenciaRC}
-            color={Colores.corazon}
-            decimales={0}
-          />
-          <TarjetaTendencia
-            icono="💧"
-            titulo="SpO₂"
-            valor={datos.oxigeno}
-            unidad="%"
-            prom={promedio(datosO2, 1)}
-            tendencia={tendenciaO2}
-            color={Colores.oxigeno}
-            decimales={1}
-          />
-          <TarjetaTendencia
-            icono="🌡️"
-            titulo="Temp"
-            valor={datos.temperatura}
-            unidad="°C"
-            prom={promedio(datosTemp, 1)}
-            tendencia={tendenciaTemp}
-            color={Colores.temperatura}
-            decimales={1}
-          />
+          {detalleTendencias.map(dt => (
+            <TarjetaTendenciaCompacta
+              key={dt.titulo}
+              icono={dt.icono}
+              titulo={dt.titulo.split(' ')[0]}
+              valor={dt.actual}
+              unidad={dt.unidad}
+              prom={dt.prom}
+              tendencia={dt.tendencia}
+              color={dt.color}
+              decimales={dt.decimales}
+            />
+          ))}
         </View>
+
+        {tendenciasAbierto && (
+          <View style={e.detalleExpandido}>
+            {detalleTendencias.map((dt, i) => (
+              <View key={i} style={[e.tarjetaDetalleTendencia, { borderLeftColor: dt.color }]}>
+                <View style={e.filaDetalleTendenciaTop}>
+                  <Text style={e.iconoDetalleTendencia}>{dt.icono}</Text>
+                  <Text style={[e.tituloDetalleTendencia, { color: dt.color }]}>{dt.titulo}</Text>
+                </View>
+                <Text style={e.textoExplicacion}>{dt.explicacion}</Text>
+
+                <View style={e.filaStatsDetalle}>
+                  <StatMini etiqueta="Promedio" valor={`${dt.prom}`} unidad={dt.unidad} color={dt.color} />
+                  <StatMini etiqueta="Máximo" valor={`${dt.max}`} unidad={dt.unidad} color={Colores.peligro} />
+                  <StatMini etiqueta="Mínimo" valor={`${dt.min}`} unidad={dt.unidad} color={Colores.oxigeno} />
+                  <StatMini etiqueta="Desv." valor={`±${dt.desv}`} unidad={dt.unidad} color={Colores.textoMedio} />
+                </View>
+
+                <View style={e.filaRangoNormal}>
+                  <Text style={e.etiquetaRango}>Rango normal:</Text>
+                  <Text style={[e.valorRango, { color: dt.color }]}>{dt.rangoNormal}</Text>
+                </View>
+
+                <View style={[e.cajaQueSignifica, { backgroundColor: dt.color + '08', borderColor: dt.color + '20' }]}>
+                  <Text style={e.etiquetaQueSignifica}>📋 ¿Qué significa esta tendencia?</Text>
+                  <Text style={e.textoQueSignifica}>{dt.queSignifica}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
 
-      {/* ── DISTRIBUCIÓN POR ZONAS ── */}
+      {/* ═══════════════════════════════════════════════════════
+          3. TIEMPO EN ZONAS (expandible)
+          ═══════════════════════════════════════════════════════ */}
       <View style={e.seccion}>
-        <View style={e.encabezadoSeccion}>
-          <Text style={e.tituloSeccion}>Tiempo en zonas</Text>
-          <Text style={e.subtituloSeccion}>% en cada nivel</Text>
-        </View>
+        <TouchableOpacity activeOpacity={0.7} onPress={toggleZonas}>
+          <View style={e.encabezadoSeccionTocable}>
+            <View>
+              <Text style={e.tituloSeccion}>Tiempo en zonas</Text>
+              <Text style={e.subtituloSeccion}>% en cada nivel</Text>
+            </View>
+            <View style={e.badgeExpandir}>
+              <Text style={e.textoChevronBadge}>{zonasAbierto ? 'Menos ▲' : 'Detalle ▼'}</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
         <View style={e.tarjetaZonas}>
-          <BarraZonas etiqueta="Ritmo cardíaco" icono="❤️" zonas={zonasRC} />
-          <View style={e.divisorZonas} />
-          <BarraZonas etiqueta="Oxigenación" icono="💧" zonas={zonasO2} />
-          <View style={e.divisorZonas} />
-          <BarraZonas etiqueta="Temperatura" icono="🌡️" zonas={zonasTemp} />
+          {infoZonas.map((iz, i) => (
+            <View key={i}>
+              {i > 0 && <View style={e.divisorZonas} />}
+              <BarraZonas etiqueta={iz.etiqueta} icono={iz.icono} zonas={iz.zonas} />
+            </View>
+          ))}
           <View style={e.leyendaZonas}>
             <View style={e.itemLeyenda}>
               <View style={[e.puntoLeyenda, { backgroundColor: Colores.seguro }]} />
@@ -410,92 +624,117 @@ export default function PantallaEstadisticas() {
             </View>
           </View>
         </View>
-      </View>
 
-      {/* ── DISTRIBUCIÓN DE ACTIVIDAD ── */}
-      <View style={e.seccion}>
-        <View style={e.encabezadoSeccion}>
-          <Text style={e.tituloSeccion}>Patrón de actividad</Text>
-          <Text style={e.subtituloSeccion}>Basado en ritmo cardíaco</Text>
-        </View>
-        <View style={e.tarjetaActividad}>
-          <View style={e.filaActividadPrincipal}>
-            <GraficoDonut distribucion={actividadDist} />
-            <View style={e.listaActividad}>
-              <ItemActividad icono="😴" etiqueta="Dormido" porcentaje={actividadDist.dormido} color="#8B5CF6" />
-              <ItemActividad icono="😊" etiqueta="Tranquilo" porcentaje={actividadDist.tranquilo} color={Colores.seguro} />
-              <ItemActividad icono="🙌" etiqueta="Activo" porcentaje={actividadDist.activo} color={Colores.actividad} />
-              <ItemActividad icono="😢" etiqueta="Llorando" porcentaje={actividadDist.llorando} color={Colores.peligro} />
-            </View>
-          </View>
-        </View>
-      </View>
-
-      {/* ── EVENTOS / ALERTAS ── */}
-      <View style={e.seccion}>
-        <View style={e.encabezadoSeccion}>
-          <Text style={e.tituloSeccion}>Eventos recientes</Text>
-          <Text style={e.subtituloSeccion}>Lecturas fuera de rango</Text>
-        </View>
-        {eventos.length === 0 ? (
-          <View style={e.tarjetaSinEventos}>
-            <Text style={e.iconoSinEventos}>✅</Text>
-            <Text style={e.tituloSinEventos}>Sin eventos</Text>
-            <Text style={e.textoSinEventos}>
-              No se han detectado lecturas fuera de rango en este período. ¡Todo en orden!
-            </Text>
-          </View>
-        ) : (
-          <View style={e.tarjetaEventos}>
-            {eventos.map((ev, i) => (
-              <View key={`${ev.hora}-${ev.signo}-${i}`}>
-                <View style={e.filaEvento}>
-                  <View style={e.lineaTiempo}>
-                    <View style={[
-                      e.puntoTimeline,
-                      { backgroundColor: ev.tipo === 'alerta' ? Colores.peligro : Colores.advertencia },
-                    ]} />
-                    {i < eventos.length - 1 && <View style={e.lineaTimeline} />}
-                  </View>
-                  <View style={e.contenidoEvento}>
-                    <View style={e.filaEventoSuperior}>
-                      <Text style={e.horaEvento}>{ev.hora}</Text>
-                      <View style={[e.badgeTipo, {
-                        backgroundColor: ev.tipo === 'alerta' ? Colores.peligro + '15' : Colores.advertencia + '15',
-                      }]}>
-                        <Text style={[e.textoBadgeTipo, {
-                          color: ev.tipo === 'alerta' ? Colores.peligro : Colores.advertencia,
-                        }]}>
-                          {ev.tipo === 'alerta' ? '⚠ Alerta' : '⚡ Precaución'}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={e.descripcionEvento}>
-                      {ev.icono} {ev.signo}: <Text style={{ color: ev.color, fontWeight: '800' }}>{ev.valor}</Text>
-                    </Text>
-                  </View>
+        {zonasAbierto && (
+          <View style={e.detalleExpandido}>
+            {infoZonas.map((iz, i) => (
+              <View key={i} style={[e.tarjetaDetalleZona, { borderLeftColor: iz.color }]}>
+                <View style={e.filaDetalleZonaTop}>
+                  <Text style={e.iconoDetalleZona}>{iz.icono}</Text>
+                  <Text style={[e.tituloDetalleZona, { color: iz.color }]}>{iz.etiqueta}</Text>
                 </View>
+                <View style={e.cajaRangos}>
+                  <Text style={e.textoRangos}>{iz.explicacion}</Text>
+                </View>
+                <Text style={e.textoContexto}>{iz.contexto}</Text>
               </View>
             ))}
           </View>
         )}
       </View>
 
-      {/* ── INSIGHTS DE SALUD ── */}
+      {/* ═══════════════════════════════════════════════════════
+          4. PATRÓN DE ACTIVIDAD (expandible)
+          ═══════════════════════════════════════════════════════ */}
       <View style={e.seccion}>
-        <View style={e.encabezadoSeccion}>
-          <Text style={e.tituloSeccion}>Análisis inteligente</Text>
-          <Text style={e.subtituloSeccion}>Basado en los datos</Text>
-        </View>
-        {insights.map((insight, i) => (
-          <View key={i} style={[e.tarjetaInsight, { borderLeftColor: insight.color }]}>
-            <View style={e.filaInsightTop}>
-              <Text style={e.iconoInsight}>{insight.icono}</Text>
-              <Text style={[e.tituloInsight, { color: insight.color }]}>{insight.titulo}</Text>
+        <TouchableOpacity activeOpacity={0.7} onPress={toggleActividad}>
+          <View style={e.encabezadoSeccionTocable}>
+            <View>
+              <Text style={e.tituloSeccion}>Patrón de actividad</Text>
+              <Text style={e.subtituloSeccion}>Basado en ritmo cardíaco</Text>
             </View>
-            <Text style={e.textoInsight}>{insight.texto}</Text>
+            <View style={e.badgeExpandir}>
+              <Text style={e.textoChevronBadge}>{actividadAbierto ? 'Menos ▲' : 'Detalle ▼'}</Text>
+            </View>
           </View>
-        ))}
+        </TouchableOpacity>
+        <View style={e.tarjetaActividad}>
+          <View style={e.filaActividadPrincipal}>
+            <GraficoDonut distribucion={actividadDist} />
+            <View style={e.listaActividad}>
+              {infoActividades.map((ia, i) => (
+                <ItemActividad key={i} icono={ia.icono} etiqueta={ia.etiqueta} porcentaje={ia.porcentaje} color={ia.color} />
+              ))}
+            </View>
+          </View>
+        </View>
+
+        {actividadAbierto && (
+          <View style={e.detalleExpandido}>
+            <View style={e.tarjetaDetalleActividad}>
+              <Text style={e.tituloDetalleActividad}>📖 Guía de estados de actividad</Text>
+              <Text style={e.introActividad}>
+                El estado de actividad se estima a partir de la frecuencia cardíaca. Cada estado tiene características fisiológicas y necesidades diferentes.
+              </Text>
+              {infoActividades.map((ia, i) => (
+                <View key={i} style={e.filaDetalleActividad}>
+                  <View style={[e.barraColorActividad, { backgroundColor: ia.color }]} />
+                  <View style={e.contenidoDetalleActividad}>
+                    <View style={e.filaEtiquetaActividad}>
+                      <Text style={e.emojiDetalleActividad}>{ia.icono}</Text>
+                      <Text style={[e.nombreDetalleActividad, { color: ia.color }]}>{ia.etiqueta}</Text>
+                      <Text style={[e.porcentajeDetalleActividad, { color: ia.color }]}>{ia.porcentaje}%</Text>
+                    </View>
+                    <Text style={e.descripcionEstado}>{ia.descripcion}</Text>
+                    <Text style={e.detalleEstado}>{ia.detalle}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+      </View>
+
+      {/* ═══════════════════════════════════════════════════════
+          5. EVENTOS RECIENTES (expandible)
+          ═══════════════════════════════════════════════════════ */}
+      <View style={e.seccion}>
+        <TouchableOpacity activeOpacity={0.7} onPress={toggleEventos}>
+          <View style={e.encabezadoSeccionTocable}>
+            <View>
+              <Text style={e.tituloSeccion}>Eventos recientes</Text>
+              <Text style={e.subtituloSeccion}>
+                {eventos.length === 0 ? 'Sin lecturas fuera de rango' : `${eventos.length} lectura${eventos.length > 1 ? 's' : ''} fuera de rango`}
+              </Text>
+            </View>
+            {eventos.length > 0 && (
+              <View style={e.badgeExpandir}>
+                <Text style={e.textoChevronBadge}>{eventosAbierto ? 'Menos ▲' : 'Detalle ▼'}</Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+
+        {eventos.length === 0 ? (
+          <View style={e.tarjetaSinEventos}>
+            <Text style={e.iconoSinEventos}>✅</Text>
+            <Text style={e.tituloSinEventos}>Todo en orden</Text>
+            <Text style={e.textoSinEventos}>
+              No se han detectado lecturas fuera de rango durante este período. Los signos vitales se han mantenido dentro de los parámetros normales.
+            </Text>
+          </View>
+        ) : (
+          <View style={e.tarjetaEventos}>
+            {(eventosAbierto ? eventos : eventos.slice(0, 3)).map((ev, i, arr) => (
+              <EventoItem key={`${ev.hora}-${ev.signo}-${i}`} evento={ev} esUltimo={i === arr.length - 1} expandido={eventosAbierto} />
+            ))}
+            {!eventosAbierto && eventos.length > 3 && (
+              <TouchableOpacity style={e.botonVerMas} onPress={toggleEventos} activeOpacity={0.7}>
+                <Text style={e.textoVerMas}>Ver {eventos.length - 3} evento{eventos.length - 3 > 1 ? 's' : ''} más ▼</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </View>
     </ScrollView>
   );
@@ -546,7 +785,7 @@ function BarraPuntajeMini({ icono, puntaje, color }: { icono: string; puntaje: n
   );
 }
 
-function TarjetaTendencia({
+function TarjetaTendenciaCompacta({
   icono, titulo, valor, unidad, prom, tendencia, color, decimales,
 }: {
   icono: string; titulo: string; valor: number; unidad: string;
@@ -557,7 +796,6 @@ function TarjetaTendencia({
   const colorTendencia = tendencia === 'estable' ? Colores.seguro
     : tendencia === 'subiendo' ? Colores.advertencia
     : Colores.oxigeno;
-  const etiquetaTendencia = { subiendo: 'Subiendo', bajando: 'Bajando', estable: 'Estable' };
 
   const diff = valor - prom;
   const diffStr = diff >= 0 ? `+${decimales > 0 ? diff.toFixed(1) : Math.round(diff)}`
@@ -572,16 +810,24 @@ function TarjetaTendencia({
         <Text style={e.unidadTendencia}> {unidad}</Text>
       </Text>
       <View style={e.filaComparativa}>
-        <Text style={[e.diffTendencia, { color: colorTendencia }]}>
-          {diffStr}
-        </Text>
+        <Text style={[e.diffTendencia, { color: colorTendencia }]}>{diffStr}</Text>
         <Text style={e.vsPromedio}>vs prom</Text>
       </View>
       <View style={[e.badgeTendencia, { backgroundColor: colorTendencia + '15' }]}>
         <Text style={[e.textoTendencia, { color: colorTendencia }]}>
-          {flechas[tendencia]} {etiquetaTendencia[tendencia]}
+          {flechas[tendencia]}
         </Text>
       </View>
+    </View>
+  );
+}
+
+function StatMini({ etiqueta, valor, unidad, color }: { etiqueta: string; valor: string; unidad: string; color: string }) {
+  return (
+    <View style={e.statMini}>
+      <Text style={[e.valorStatMini, { color }]}>{valor}</Text>
+      <Text style={e.unidadStatMini}>{unidad}</Text>
+      <Text style={e.etiquetaStatMini}>{etiqueta}</Text>
     </View>
   );
 }
@@ -680,6 +926,53 @@ function ItemActividad({ icono, etiqueta, porcentaje, color }: { icono: string; 
   );
 }
 
+function EventoItem({ evento, esUltimo, expandido }: { evento: EventoSalud; esUltimo: boolean; expandido: boolean }) {
+  const [detalleVisible, setDetalleVisible] = useState(false);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={() => {
+        LayoutAnimation.configureNext(ANIM_CONFIG);
+        setDetalleVisible(prev => !prev);
+      }}
+    >
+      <View style={e.filaEvento}>
+        <View style={e.lineaTiempo}>
+          <View style={[
+            e.puntoTimeline,
+            { backgroundColor: evento.tipo === 'alerta' ? Colores.peligro : Colores.advertencia },
+          ]} />
+          {!esUltimo && <View style={e.lineaTimeline} />}
+        </View>
+        <View style={[e.contenidoEvento, esUltimo && { paddingBottom: 4 }]}>
+          <View style={e.filaEventoSuperior}>
+            <Text style={e.horaEvento}>{evento.hora}</Text>
+            <View style={[e.badgeTipo, {
+              backgroundColor: evento.tipo === 'alerta' ? Colores.peligro + '15' : Colores.advertencia + '15',
+            }]}>
+              <Text style={[e.textoBadgeTipo, {
+                color: evento.tipo === 'alerta' ? Colores.peligro : Colores.advertencia,
+              }]}>
+                {evento.tipo === 'alerta' ? '⚠ Alerta' : '⚡ Precaución'}
+              </Text>
+            </View>
+          </View>
+          <Text style={e.descripcionEvento}>
+            {evento.icono} {evento.signo}: <Text style={{ color: evento.color, fontWeight: '800' }}>{evento.valor}</Text>
+            {!detalleVisible && <Text style={e.textoTocaDetalle}>  ▸</Text>}
+          </Text>
+          {detalleVisible && (
+            <View style={[e.cajaDetalleEvento, { borderColor: evento.color + '30' }]}>
+              <Text style={e.textoDetalleEvento}>{evento.detalle}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 // ── Estilos ─────────────────────────────────────────────────────
 
 const ALTO_PILDORA = 44;
@@ -728,9 +1021,24 @@ const e = StyleSheet.create({
   seccion: { paddingHorizontal: 20, marginBottom: 16 },
   encabezadoSeccion: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 },
   tituloSeccion: { fontSize: 17, fontWeight: '800', color: Colores.textoOscuro },
-  subtituloSeccion: { fontSize: 12, color: Colores.textoClaro, fontWeight: '500' },
+  subtituloSeccion: { fontSize: 12, color: Colores.textoClaro, fontWeight: '500', marginTop: 1 },
 
-  // Puntuación de bienestar (compacta)
+  // Encabezado tocable con chevron
+  encabezadoSeccionTocable: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  badgeExpandir: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: Colores.primario + '10',
+  },
+  textoChevronBadge: { fontSize: 11, fontWeight: '700', color: Colores.primario },
+
+  // Puntuación de bienestar
   tarjetaPuntaje: {
     marginHorizontal: 20,
     backgroundColor: '#FFFFFF',
@@ -745,9 +1053,14 @@ const e = StyleSheet.create({
   },
   filaPuntajeCompacta: { flexDirection: 'row', alignItems: 'center', gap: 18 },
   infoPuntaje: { flex: 1, gap: 6 },
+  filaTituloChevron: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   tituloPuntaje: { fontSize: 16, fontWeight: '800', color: Colores.textoOscuro },
+  chevron: { fontSize: 12, color: Colores.textoClaro, marginLeft: 4 },
   insigniaPuntaje: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 14, borderWidth: 1, alignSelf: 'flex-start' },
   textoPuntajeInsignia: { fontSize: 12, fontWeight: '700' },
+
+  pistaExpandir: { alignItems: 'center', marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: Colores.divisor },
+  textoExpandir: { fontSize: 12, fontWeight: '600', color: Colores.primario },
 
   desgloseCompacto: { gap: 4, marginTop: 4 },
   filaBarraMini: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -760,6 +1073,32 @@ const e = StyleSheet.create({
   centroCirculo: { position: 'absolute', alignItems: 'center' },
   numeroPuntaje: { fontSize: 32, fontWeight: '900', lineHeight: 36 },
   etiquetaPuntajeCirculo: { fontSize: 11, fontWeight: '600', marginTop: -2 },
+
+  // Insights (dentro de bienestar)
+  contenedorInsights: { marginTop: 8 },
+  divisorInsight: { height: 1, backgroundColor: Colores.divisor, marginBottom: 14 },
+  encabezadoInsights: { marginBottom: 12 },
+  tituloInsightsSeccion: { fontSize: 15, fontWeight: '800', color: Colores.textoOscuro },
+  subtituloInsights: { fontSize: 11, fontWeight: '500', color: Colores.textoClaro, marginTop: 2 },
+  tarjetaInsight: {
+    backgroundColor: Colores.fondo,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderLeftWidth: 4,
+  },
+  filaInsightTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  iconoInsight: { fontSize: 18 },
+  tituloInsight: { fontSize: 14, fontWeight: '800' },
+  textoInsight: { fontSize: 13, color: Colores.textoMedio, fontWeight: '500', lineHeight: 19 },
+  cajaRecomendacion: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  etiquetaRecomendacion: { fontSize: 11, fontWeight: '700', color: Colores.textoOscuro, marginBottom: 4 },
+  textoRecomendacion: { fontSize: 12, fontWeight: '500', color: Colores.textoMedio, lineHeight: 17 },
 
   // Tendencias
   filaTendencias: { flexDirection: 'row', gap: 10 },
@@ -790,6 +1129,41 @@ const e = StyleSheet.create({
     marginTop: 6,
   },
   textoTendencia: { fontSize: 10, fontWeight: '700' },
+
+  // Detalle expandido general
+  detalleExpandido: { marginTop: 12, gap: 10 },
+
+  // Detalle tendencias
+  tarjetaDetalleTendencia: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  filaDetalleTendenciaTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  iconoDetalleTendencia: { fontSize: 20 },
+  tituloDetalleTendencia: { fontSize: 15, fontWeight: '800' },
+  textoExplicacion: { fontSize: 13, color: Colores.textoMedio, fontWeight: '500', lineHeight: 19, marginBottom: 12 },
+  filaStatsDetalle: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 12, paddingVertical: 10, backgroundColor: Colores.fondo, borderRadius: 12 },
+  statMini: { alignItems: 'center' },
+  valorStatMini: { fontSize: 15, fontWeight: '800' },
+  unidadStatMini: { fontSize: 9, fontWeight: '600', color: Colores.textoClaro, marginTop: -1 },
+  etiquetaStatMini: { fontSize: 10, fontWeight: '600', color: Colores.textoClaro, marginTop: 2 },
+  filaRangoNormal: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  etiquetaRango: { fontSize: 12, fontWeight: '600', color: Colores.textoClaro },
+  valorRango: { fontSize: 13, fontWeight: '800' },
+  cajaQueSignifica: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  etiquetaQueSignifica: { fontSize: 12, fontWeight: '700', color: Colores.textoOscuro, marginBottom: 4 },
+  textoQueSignifica: { fontSize: 12, fontWeight: '500', color: Colores.textoMedio, lineHeight: 17 },
 
   // Zonas
   tarjetaZonas: {
@@ -831,6 +1205,30 @@ const e = StyleSheet.create({
   puntoLeyenda: { width: 8, height: 8, borderRadius: 4 },
   textoLeyenda: { fontSize: 11, fontWeight: '600', color: Colores.textoClaro },
 
+  // Detalle zonas
+  tarjetaDetalleZona: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  filaDetalleZonaTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  iconoDetalleZona: { fontSize: 18 },
+  tituloDetalleZona: { fontSize: 14, fontWeight: '800' },
+  cajaRangos: {
+    backgroundColor: Colores.fondo,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+  },
+  textoRangos: { fontSize: 12, fontWeight: '600', color: Colores.textoOscuro, lineHeight: 17 },
+  textoContexto: { fontSize: 12, fontWeight: '500', color: Colores.textoMedio, lineHeight: 17 },
+
   // Actividad
   tarjetaActividad: {
     backgroundColor: '#FFFFFF',
@@ -852,6 +1250,29 @@ const e = StyleSheet.create({
   iconoActividad: { fontSize: 16 },
   etiquetaActividad: { flex: 1, fontSize: 13, fontWeight: '600', color: Colores.textoMedio },
   porcentajeActividad: { fontSize: 14, fontWeight: '800' },
+
+  // Detalle actividad
+  tarjetaDetalleActividad: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  tituloDetalleActividad: { fontSize: 15, fontWeight: '800', color: Colores.textoOscuro, marginBottom: 6 },
+  introActividad: { fontSize: 12, fontWeight: '500', color: Colores.textoClaro, lineHeight: 17, marginBottom: 14 },
+  filaDetalleActividad: { flexDirection: 'row', marginBottom: 14, gap: 10 },
+  barraColorActividad: { width: 4, borderRadius: 2, alignSelf: 'stretch' },
+  contenidoDetalleActividad: { flex: 1 },
+  filaEtiquetaActividad: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  emojiDetalleActividad: { fontSize: 16 },
+  nombreDetalleActividad: { fontSize: 14, fontWeight: '800', flex: 1 },
+  porcentajeDetalleActividad: { fontSize: 14, fontWeight: '800' },
+  descripcionEstado: { fontSize: 11, fontWeight: '600', color: Colores.textoOscuro, marginBottom: 4 },
+  detalleEstado: { fontSize: 12, fontWeight: '500', color: Colores.textoMedio, lineHeight: 17 },
 
   // Eventos
   tarjetaEventos: {
@@ -888,22 +1309,23 @@ const e = StyleSheet.create({
   badgeTipo: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
   textoBadgeTipo: { fontSize: 10, fontWeight: '700' },
   descripcionEvento: { fontSize: 13, color: Colores.textoMedio, fontWeight: '600' },
-
-  // Insights
-  tarjetaInsight: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 10,
-    borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+  textoTocaDetalle: { fontSize: 11, color: Colores.textoClaro },
+  cajaDetalleEvento: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: Colores.fondo,
+    borderWidth: 1,
   },
-  filaInsightTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  iconoInsight: { fontSize: 18 },
-  tituloInsight: { fontSize: 14, fontWeight: '800' },
-  textoInsight: { fontSize: 13, color: Colores.textoMedio, fontWeight: '500', lineHeight: 19 },
+  textoDetalleEvento: { fontSize: 12, fontWeight: '500', color: Colores.textoMedio, lineHeight: 17 },
+
+  botonVerMas: {
+    alignItems: 'center',
+    paddingTop: 12,
+    paddingBottom: 4,
+    borderTopWidth: 1,
+    borderTopColor: Colores.divisor,
+    marginTop: 4,
+  },
+  textoVerMas: { fontSize: 12, fontWeight: '700', color: Colores.primario },
 });
