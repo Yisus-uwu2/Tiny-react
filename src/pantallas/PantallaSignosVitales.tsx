@@ -236,7 +236,7 @@ export default function PantallaSignosVitales({ route }: any) {
       </Animated.View>
 
       {/* ── GRÁFICO DETALLADO ── */}
-      <TouchableOpacity activeOpacity={0.8} onPress={abrirDetalle}>
+      <TarjetaPresionable onPress={abrirDetalle}>
         <View style={es.seccionGrafico}>
           <View style={es.encabezadoGrafico}>
             <Text style={es.tituloSeccion}>Historial</Text>
@@ -253,7 +253,7 @@ export default function PantallaSignosVitales({ route }: any) {
             decimales={cfg.decimales}
           />
         </View>
-      </TouchableOpacity>
+      </TarjetaPresionable>
 
       {/* ── CONSEJOS ── */}
       <View style={[es.tarjetaConsejos, { borderLeftColor: cfg.color }]}>
@@ -292,6 +292,20 @@ export default function PantallaSignosVitales({ route }: any) {
 }
 
 // ── Sub-componentes ─────────────────────────────────────────────
+
+/** Tarjeta con micro-animación spring al presionar */
+function TarjetaPresionable({ onPress, children }: { onPress: () => void; children: React.ReactNode }) {
+  const escala = useRef(new Animated.Value(1)).current;
+  const onPressIn = () => Animated.spring(escala, { toValue: 0.97, useNativeDriver: true, tension: 120, friction: 8 }).start();
+  const onPressOut = () => Animated.spring(escala, { toValue: 1, useNativeDriver: true, tension: 40, friction: 6 }).start();
+  return (
+    <TouchableOpacity activeOpacity={1} onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut}>
+      <Animated.View style={{ transform: [{ scale: escala }] }}>
+        {children}
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
 
 function CajaEstadistica({ etiqueta, valor, unidad, color, icono }: { etiqueta: string; valor: string; unidad: string; color: string; icono: string }) {
   return (

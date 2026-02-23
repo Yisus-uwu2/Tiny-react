@@ -9,10 +9,9 @@ import {
   Animated, LayoutAnimation, Platform, UIManager, Easing, RefreshControl,
 } from 'react-native';
 import Svg, { Circle, Polyline } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useDatosSensor } from '../hooks/useDatosSensor';
 import { Colores } from '../constantes/colores';
-
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 // Habilitar LayoutAnimation en Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -27,10 +26,10 @@ const ANIM_CONFIG = LayoutAnimation.create(
 );
 
 type Periodo = '1h' | '6h' | '24h';
-const PERIODOS: { clave: Periodo; etiqueta: string }[] = [
-  { clave: '1h',  etiqueta: 'Última hora' },
-  { clave: '6h',  etiqueta: '6 horas' },
-  { clave: '24h', etiqueta: '24 horas' },
+const PERIODOS: { clave: Periodo; etiqueta: string; emoji: string }[] = [
+  { clave: '1h',  etiqueta: 'Última hora', emoji: '⏱️' },
+  { clave: '6h',  etiqueta: '6 horas',    emoji: '🕒' },
+  { clave: '24h', etiqueta: '24 horas',   emoji: '📅' },
 ];
 
 // ── Utilidades ──────────────────────────────────────────────────
@@ -452,7 +451,7 @@ export default function PantallaEstadisticas() {
     >
 
       {/* ── ENCABEZADO ── */}
-      <View style={e.zonaEncabezado}>
+      <LinearGradient colors={['#F8F5FF', Colores.fondo]} style={e.zonaEncabezado}>
         <View style={e.espacioSuperior} />
         <View style={e.filaEncabezado}>
           <View>
@@ -467,7 +466,8 @@ export default function PantallaEstadisticas() {
             <View style={[e.puntoVivoInterno, { backgroundColor: datos.conectado ? Colores.seguro : Colores.peligro }]} />
           </Animated.View>
         </View>
-      </View>
+        <Text style={e.textoActualizado}>Actualizado {new Date().getHours().toString().padStart(2,'0')}:{new Date().getMinutes().toString().padStart(2,'0')}</Text>
+      </LinearGradient>
 
       {/* ── SELECTOR DE PERÍODO ── */}
       <View style={e.contenedorPildora}>
@@ -506,7 +506,7 @@ export default function PantallaEstadisticas() {
       {/* ── BARRA RESUMEN ── */}
       <View style={e.barraResumen}>
         <View style={[e.chipResumen, { backgroundColor: colorPuntaje + '18' }]}>
-          <Text style={[e.chipResumenTexto, { color: colorPuntaje }]}>🏥 {puntajeGeneral}/100</Text>
+          <Text style={[e.chipResumenTexto, { color: colorPuntaje }]}>{puntajeGeneral}/100</Text>
         </View>
         <View style={[e.chipResumen, { backgroundColor: (tendenciaRC === 'estable' && tendenciaO2 === 'estable' && tendenciaTemp === 'estable' ? Colores.seguro : Colores.advertencia) + '18' }]}>
           <Text style={[e.chipResumenTexto, { color: tendenciaRC === 'estable' && tendenciaO2 === 'estable' && tendenciaTemp === 'estable' ? Colores.seguroOscuro : Colores.advertenciaOscuro }]}>
@@ -521,10 +521,12 @@ export default function PantallaEstadisticas() {
       {/* ═══════════════════════════════════════════════════════
           1. BIENESTAR + INSIGHTS (expandible)
           ═══════════════════════════════════════════════════════ */}
-      <TouchableOpacity activeOpacity={0.85} onPress={toggleBienestar}>
+      <WidgetPresionable onPress={toggleBienestar}>
         <Animated.View style={[e.tarjetaPuntaje, {
           opacity: animEntrada,
           transform: [{ translateY: animEntrada.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+          borderTopWidth: 3,
+          borderTopColor: colorPuntaje + '60',
         }]}>
           <View style={e.filaPuntajeCompacta}>
             <CirculoPuntaje puntaje={puntajeGeneral} color={colorPuntaje} />
@@ -537,16 +539,31 @@ export default function PantallaEstadisticas() {
                 <Text style={[e.textoPuntajeInsignia, { color: colorPuntaje }]}>{etiquetaPuntaje}</Text>
               </View>
               <View style={e.desgloseCompacto}>
-                <BarraPuntajeMini icono="❤️" puntaje={puntajeRC} color={Colores.corazon} />
-                <BarraPuntajeMini icono="💧" puntaje={puntajeO2} color={Colores.oxigeno} />
-                <BarraPuntajeMini icono="🌡️" puntaje={puntajeTemp} color={Colores.temperatura} />
+                <BarraPuntajeMiniAnimada icono="❤️" puntaje={puntajeRC} color={Colores.corazon} />
+                <BarraPuntajeMiniAnimada icono="💧" puntaje={puntajeO2} color={Colores.oxigeno} />
+                <BarraPuntajeMiniAnimada icono="🌡️" puntaje={puntajeTemp} color={Colores.temperatura} />
               </View>
             </View>
           </View>
 
           {!bienestarAbierto && (
-            <View style={e.pistaExpandir}>
-              <Text style={e.textoExpandir}>Toca para ver análisis inteligente</Text>
+            <View>
+              {/* Mini sparkline del historial RC como vistazo rápido */}
+              {datosRC.length >= 3 && (() => {
+                const mn = Math.min(...datosRC), mx = Math.max(...datosRC), rg = mx - mn || 1;
+                const w = ANCHO_PANTALLA - 80, h = 24;
+                const pts = datosRC.map((v, i) => `${(i / (datosRC.length - 1)) * w},${h - ((v - mn) / rg) * (h - 4) - 2}`).join(' ');
+                const area = `0,${h} ${pts} ${w},${h}`;
+                return (
+                  <Svg width={w} height={h} style={{ alignSelf: 'center', marginTop: 10, opacity: 0.4 }}>
+                    <Polyline points={area} fill={colorPuntaje + '15'} stroke="none" />
+                    <Polyline points={pts} fill="none" stroke={colorPuntaje} strokeWidth={1.5} strokeLinecap="round" />
+                  </Svg>
+                );
+              })()}
+              <View style={e.pistaExpandir}>
+                <Text style={e.textoExpandir}>Toca para ver análisis inteligente</Text>
+              </View>
             </View>
           )}
 
@@ -555,7 +572,7 @@ export default function PantallaEstadisticas() {
             <View style={e.contenedorInsights}>
               <View style={e.divisorInsight} />
               <View style={e.encabezadoInsights}>
-                <Text style={e.tituloInsightsSeccion}>🧠  Análisis inteligente</Text>
+                <Text style={e.tituloInsightsSeccion}>Análisis inteligente</Text>
                 <Text style={e.subtituloInsights}>Evaluación basada en los datos del período</Text>
               </View>
               {insights.map((insight, i) => (
@@ -574,89 +591,91 @@ export default function PantallaEstadisticas() {
             </View>
           )}
         </Animated.View>
-      </TouchableOpacity>
+      </WidgetPresionable>
 
       <Animated.View style={{ opacity: animResto, transform: [{ translateY: animResto.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }}>
       {/* ═══════════════════════════════════════════════════════
           2. TENDENCIAS (expandible)
           ═══════════════════════════════════════════════════════ */}
-      <View style={e.seccion}>
-        <TouchableOpacity activeOpacity={0.7} onPress={toggleTendencias}>
+      <WidgetPresionable onPress={toggleTendencias}>
+        <View style={[e.tarjetaSeccionUnificada, e.seccionMargen]}>
           <View style={e.encabezadoSeccionTocable}>
             <View>
               <Text style={e.tituloSeccion}>Tendencias</Text>
               <Text style={e.subtituloSeccion}>Comparativa del período</Text>
             </View>
-            <View style={e.badgeExpandir}>
-              <Text style={e.textoChevronBadge}>{tendenciasAbierto ? 'Menos ▲' : 'Detalle ▼'}</Text>
-            </View>
+            <Text style={e.chevron}>{tendenciasAbierto ? '▲' : '▼'}</Text>
           </View>
-        </TouchableOpacity>
-        <View style={e.filaTendencias}>
-          {detalleTendencias.map(dt => (
-            <TarjetaTendenciaCompacta
-              key={dt.titulo}
-              icono={dt.icono}
-              titulo={dt.titulo.split(' ')[0]}
-              valor={dt.actual}
-              unidad={dt.unidad}
-              prom={dt.prom}
-              tendencia={dt.tendencia}
-              color={dt.color}
-              decimales={dt.decimales}
-              sparkDatos={dt.sparkDatos}
-            />
-          ))}
-        </View>
-
-        {tendenciasAbierto && (
-          <View style={e.detalleExpandido}>
-            {detalleTendencias.map((dt, i) => (
-              <View key={i} style={[e.tarjetaDetalleTendencia, { borderLeftColor: dt.color }]}>
-                <View style={e.filaDetalleTendenciaTop}>
-                  <Text style={e.iconoDetalleTendencia}>{dt.icono}</Text>
-                  <Text style={[e.tituloDetalleTendencia, { color: dt.color }]}>{dt.titulo}</Text>
-                </View>
-                <Text style={e.textoExplicacion}>{dt.explicacion}</Text>
-
-                <View style={e.filaStatsDetalle}>
-                  <StatMini etiqueta="Promedio" valor={`${dt.prom}`} unidad={dt.unidad} color={dt.color} />
-                  <StatMini etiqueta="Máximo" valor={`${dt.max}`} unidad={dt.unidad} color={Colores.peligro} />
-                  <StatMini etiqueta="Mínimo" valor={`${dt.min}`} unidad={dt.unidad} color={Colores.oxigeno} />
-                  <StatMini etiqueta="Desv." valor={`±${dt.desv}`} unidad={dt.unidad} color={Colores.textoMedio} />
-                </View>
-
-                <View style={e.filaRangoNormal}>
-                  <Text style={e.etiquetaRango}>Rango normal:</Text>
-                  <Text style={[e.valorRango, { color: dt.color }]}>{dt.rangoNormal}</Text>
-                </View>
-
-                <View style={[e.cajaQueSignifica, { backgroundColor: dt.color + '08', borderColor: dt.color + '20' }]}>
-                  <Text style={e.etiquetaQueSignifica}>📋 ¿Qué significa esta tendencia?</Text>
-                  <Text style={e.textoQueSignifica}>{dt.queSignifica}</Text>
-                </View>
-              </View>
+          <View style={e.filaTendencias}>
+            {detalleTendencias.map(dt => (
+              <TarjetaTendenciaCompacta
+                key={dt.titulo}
+                icono={dt.icono}
+                titulo={dt.titulo.split(' ')[0]}
+                valor={dt.actual}
+                unidad={dt.unidad}
+                prom={dt.prom}
+                tendencia={dt.tendencia}
+                color={dt.color}
+                decimales={dt.decimales}
+                sparkDatos={dt.sparkDatos}
+              />
             ))}
           </View>
-        )}
-      </View>
+
+          {tendenciasAbierto && (
+            <>
+              <View style={e.divisorInsight} />
+              {detalleTendencias.map((dt, i) => (
+                <View key={i} style={[e.tarjetaDetalleTendencia, { borderLeftColor: dt.color }]}>
+                  <View style={e.filaDetalleTendenciaTop}>
+                    <Text style={e.iconoDetalleTendencia}>{dt.icono}</Text>
+                    <Text style={[e.tituloDetalleTendencia, { color: dt.color }]}>{dt.titulo}</Text>
+                  </View>
+                  <Text style={e.textoExplicacion}>{dt.explicacion}</Text>
+
+                  <View style={e.filaStatsDetalle}>
+                    <StatMini etiqueta="Promedio" valor={`${dt.prom}`} unidad={dt.unidad} color={dt.color} />
+                    <StatMini etiqueta="Máximo" valor={`${dt.max}`} unidad={dt.unidad} color={Colores.peligro} />
+                    <StatMini etiqueta="Mínimo" valor={`${dt.min}`} unidad={dt.unidad} color={Colores.oxigeno} />
+                    <StatMini etiqueta="Desv." valor={`±${dt.desv}`} unidad={dt.unidad} color={Colores.textoMedio} />
+                  </View>
+
+                  <View style={e.filaRangoNormal}>
+                    <Text style={e.etiquetaRango}>Rango normal:</Text>
+                    <Text style={[e.valorRango, { color: dt.color }]}>{dt.rangoNormal}</Text>
+                  </View>
+
+                  <View style={[e.cajaQueSignifica, { backgroundColor: dt.color + '08', borderColor: dt.color + '20' }]}>
+                    <Text style={e.etiquetaQueSignifica}>¿Qué significa esta tendencia?</Text>
+                    <Text style={e.textoQueSignifica}>{dt.queSignifica}</Text>
+                  </View>
+                </View>
+              ))}
+            </>
+          )}
+
+          {!tendenciasAbierto && (
+            <View style={e.pistaExpandir}>
+              <Text style={e.textoExpandir}>Toca para ver detalles</Text>
+            </View>
+          )}
+        </View>
+      </WidgetPresionable>
 
       {/* ═══════════════════════════════════════════════════════
           3. TIEMPO EN ZONAS (expandible)
           ═══════════════════════════════════════════════════════ */}
-      <View style={e.seccion}>
-        <TouchableOpacity activeOpacity={0.7} onPress={toggleZonas}>
+      <WidgetPresionable onPress={toggleZonas}>
+        <View style={[e.tarjetaSeccionUnificada, e.seccionMargen]}>
           <View style={e.encabezadoSeccionTocable}>
             <View>
               <Text style={e.tituloSeccion}>Tiempo en zonas</Text>
               <Text style={e.subtituloSeccion}>% en cada nivel</Text>
             </View>
-            <View style={e.badgeExpandir}>
-              <Text style={e.textoChevronBadge}>{zonasAbierto ? 'Menos ▲' : 'Detalle ▼'}</Text>
-            </View>
+            <Text style={e.chevron}>{zonasAbierto ? '▲' : '▼'}</Text>
           </View>
-        </TouchableOpacity>
-        <View style={e.tarjetaZonas}>
+
           {infoZonas.map((iz, i) => (
             <View key={i}>
               {i > 0 && <View style={e.divisorZonas} />}
@@ -677,42 +696,46 @@ export default function PantallaEstadisticas() {
               <Text style={e.textoLeyenda}>Alerta</Text>
             </View>
           </View>
-        </View>
 
-        {zonasAbierto && (
-          <View style={e.detalleExpandido}>
-            {infoZonas.map((iz, i) => (
-              <View key={i} style={[e.tarjetaDetalleZona, { borderLeftColor: iz.color }]}>
-                <View style={e.filaDetalleZonaTop}>
-                  <Text style={e.iconoDetalleZona}>{iz.icono}</Text>
-                  <Text style={[e.tituloDetalleZona, { color: iz.color }]}>{iz.etiqueta}</Text>
+          {zonasAbierto && (
+            <>
+              <View style={e.divisorInsight} />
+              {infoZonas.map((iz, i) => (
+                <View key={i} style={[e.tarjetaDetalleZona, { borderLeftColor: iz.color }]}>
+                  <View style={e.filaDetalleZonaTop}>
+                    <Text style={e.iconoDetalleZona}>{iz.icono}</Text>
+                    <Text style={[e.tituloDetalleZona, { color: iz.color }]}>{iz.etiqueta}</Text>
+                  </View>
+                  <View style={e.cajaRangos}>
+                    <Text style={e.textoRangos}>{iz.explicacion}</Text>
+                  </View>
+                  <Text style={e.textoContexto}>{iz.contexto}</Text>
                 </View>
-                <View style={e.cajaRangos}>
-                  <Text style={e.textoRangos}>{iz.explicacion}</Text>
-                </View>
-                <Text style={e.textoContexto}>{iz.contexto}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
+              ))}
+            </>
+          )}
+
+          {!zonasAbierto && (
+            <View style={e.pistaExpandir}>
+              <Text style={e.textoExpandir}>Toca para ver detalles</Text>
+            </View>
+          )}
+        </View>
+      </WidgetPresionable>
 
       {/* ═══════════════════════════════════════════════════════
           4. PATRÓN DE ACTIVIDAD (expandible)
           ═══════════════════════════════════════════════════════ */}
-      <View style={e.seccion}>
-        <TouchableOpacity activeOpacity={0.7} onPress={toggleActividad}>
+      <WidgetPresionable onPress={toggleActividad}>
+        <View style={[e.tarjetaSeccionUnificada, e.seccionMargen]}>
           <View style={e.encabezadoSeccionTocable}>
             <View>
               <Text style={e.tituloSeccion}>Patrón de actividad</Text>
               <Text style={e.subtituloSeccion}>Basado en ritmo cardíaco</Text>
             </View>
-            <View style={e.badgeExpandir}>
-              <Text style={e.textoChevronBadge}>{actividadAbierto ? 'Menos ▲' : 'Detalle ▼'}</Text>
-            </View>
+            <Text style={e.chevron}>{actividadAbierto ? '▲' : '▼'}</Text>
           </View>
-        </TouchableOpacity>
-        <View style={e.tarjetaActividad}>
+
           <View style={e.filaActividadPrincipal}>
             <GraficoDonut distribucion={actividadDist} />
             <View style={e.listaActividad}>
@@ -721,12 +744,11 @@ export default function PantallaEstadisticas() {
               ))}
             </View>
           </View>
-        </View>
 
-        {actividadAbierto && (
-          <View style={e.detalleExpandido}>
-            <View style={e.tarjetaDetalleActividad}>
-              <Text style={e.tituloDetalleActividad}>📖 Guía de estados de actividad</Text>
+          {actividadAbierto && (
+            <>
+              <View style={e.divisorInsight} />
+              <Text style={e.tituloDetalleActividad}>Guía de estados de actividad</Text>
               <Text style={e.introActividad}>
                 El estado de actividad se estima a partir de la frecuencia cardíaca. Cada estado tiene características fisiológicas y necesidades diferentes.
               </Text>
@@ -744,16 +766,22 @@ export default function PantallaEstadisticas() {
                   </View>
                 </View>
               ))}
+            </>
+          )}
+
+          {!actividadAbierto && (
+            <View style={e.pistaExpandir}>
+              <Text style={e.textoExpandir}>Toca para ver detalles</Text>
             </View>
-          </View>
-        )}
-      </View>
+          )}
+        </View>
+      </WidgetPresionable>
 
       {/* ═══════════════════════════════════════════════════════
           5. EVENTOS RECIENTES (expandible)
           ═══════════════════════════════════════════════════════ */}
-      <View style={e.seccion}>
-        <TouchableOpacity activeOpacity={0.7} onPress={toggleEventos}>
+      <WidgetPresionable onPress={toggleEventos}>
+        <View style={[e.tarjetaSeccionUnificada, e.seccionMargen]}>
           <View style={e.encabezadoSeccionTocable}>
             <View>
               <Text style={e.tituloSeccion}>Eventos recientes</Text>
@@ -762,40 +790,52 @@ export default function PantallaEstadisticas() {
               </Text>
             </View>
             {eventos.length > 0 && (
-              <View style={e.badgeExpandir}>
-                <Text style={e.textoChevronBadge}>{eventosAbierto ? 'Menos ▲' : 'Detalle ▼'}</Text>
-              </View>
+              <Text style={e.chevron}>{eventosAbierto ? '▲' : '▼'}</Text>
             )}
           </View>
-        </TouchableOpacity>
 
-        {eventos.length === 0 ? (
-          <View style={e.tarjetaSinEventos}>
-            <Text style={e.iconoSinEventos}>✅</Text>
-            <Text style={e.tituloSinEventos}>Todo en orden</Text>
-            <Text style={e.textoSinEventos}>
-              No se han detectado lecturas fuera de rango durante este período. Los signos vitales se han mantenido dentro de los parámetros normales.
-            </Text>
-          </View>
-        ) : (
-          <View style={e.tarjetaEventos}>
-            {(eventosAbierto ? eventos : eventos.slice(0, 3)).map((ev, i, arr) => (
-              <EventoItem key={`${ev.hora}-${ev.signo}-${i}`} evento={ev} esUltimo={i === arr.length - 1} expandido={eventosAbierto} />
-            ))}
-            {!eventosAbierto && eventos.length > 3 && (
-              <TouchableOpacity style={e.botonVerMas} onPress={toggleEventos} activeOpacity={0.7}>
-                <Text style={e.textoVerMas}>Ver {eventos.length - 3} evento{eventos.length - 3 > 1 ? 's' : ''} más ▼</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-      </View>
+          {eventos.length === 0 ? (
+            <View style={e.contenidoSinEventos}>
+              <Text style={e.iconoSinEventos}>✅</Text>
+              <Text style={e.tituloSinEventos}>Todo en orden</Text>
+              <Text style={e.textoSinEventos}>
+                No se han detectado lecturas fuera de rango durante este período. Los signos vitales se han mantenido dentro de los parámetros normales.
+              </Text>
+            </View>
+          ) : (
+            <View>
+              {(eventosAbierto ? eventos : eventos.slice(0, 3)).map((ev, i, arr) => (
+                <EventoItem key={`${ev.hora}-${ev.signo}-${i}`} evento={ev} esUltimo={i === arr.length - 1} expandido={eventosAbierto} />
+              ))}
+              {!eventosAbierto && eventos.length > 3 && (
+                <View style={e.pistaExpandir}>
+                  <Text style={e.textoExpandir}>Ver {eventos.length - 3} evento{eventos.length - 3 > 1 ? 's' : ''} más</Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      </WidgetPresionable>
       </Animated.View>
     </ScrollView>
   );
 }
 
 // ── Sub-componentes ─────────────────────────────────────────────
+
+/** Widget con micro-animación de escala al presionar */
+function WidgetPresionable({ onPress, children }: { onPress: () => void; children: React.ReactNode }) {
+  const escala = useRef(new Animated.Value(1)).current;
+  const alPresionar = () => Animated.spring(escala, { toValue: 0.97, useNativeDriver: true, tension: 120, friction: 8 }).start();
+  const alSoltar = () => Animated.spring(escala, { toValue: 1, useNativeDriver: true, tension: 40, friction: 6 }).start();
+  return (
+    <TouchableOpacity activeOpacity={1} onPress={onPress} onPressIn={alPresionar} onPressOut={alSoltar}>
+      <Animated.View style={{ transform: [{ scale: escala }] }}>
+        {children}
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
 
 function CirculoPuntaje({ puntaje, color }: { puntaje: number; color: string }) {
   const tam = 110;
@@ -806,42 +846,49 @@ function CirculoPuntaje({ puntaje, color }: { puntaje: number; color: string }) 
   const lleno = (puntaje / 100) * circ;
   const offset = circ - lleno;
 
-  // Animación de llenado: strokeDashoffset va de circ → offset
-  const animOffset = useRef(new Animated.Value(circ)).current;
-  useEffect(() => {
-    animOffset.setValue(circ);
-    Animated.timing(animOffset, { toValue: offset, duration: 1200, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
-  }, [puntaje]);
-
   // Animación del número
   const opNum = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     opNum.setValue(0);
-    Animated.timing(opNum, { toValue: 1, duration: 600, delay: 400, useNativeDriver: true }).start();
+    Animated.timing(opNum, { toValue: 1, duration: 600, delay: 200, useNativeDriver: true }).start();
   }, [puntaje]);
 
   return (
     <View style={e.envolturioCirculo}>
       <Svg width={tam} height={tam}>
         <Circle cx={cx} cy={cy} r={radio} fill="none" stroke={Colores.borde} strokeWidth={9} />
-        <AnimatedCircle
+        <Circle
           cx={cx} cy={cy} r={radio}
           fill="none"
           stroke={color}
           strokeWidth={9}
-          strokeDasharray={`${circ}`}
-          strokeDashoffset={animOffset}
+          strokeDasharray={`${lleno} ${circ - lleno}`}
+          strokeDashoffset={0}
           strokeLinecap="round"
           rotation={-90}
           origin={`${cx},${cy}`}
         />
       </Svg>
       <Animated.View style={[e.centroCirculo, { opacity: opNum }]}>
-        <Text style={[e.numeroPuntaje, { color }]}>{puntaje}</Text>
+        <ValorAnimadoEst valor={puntaje} color={color} />
         <Text style={[e.etiquetaPuntajeCirculo, { color: color + 'AA' }]}>/100</Text>
       </Animated.View>
     </View>
   );
+}
+
+/** Valor con count-up animado */
+function ValorAnimadoEst({ valor, color }: { valor: number; color: string }) {
+  const [display, setDisplay] = useState(0);
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const listener = anim.addListener(({ value: v }) => setDisplay(Math.round(v)));
+    return () => anim.removeListener(listener);
+  }, []);
+  useEffect(() => {
+    Animated.timing(anim, { toValue: valor, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+  }, [valor]);
+  return <Text style={[e.numeroPuntaje, { color }]}>{display}</Text>;
 }
 
 function BarraPuntajeMini({ icono, puntaje, color }: { icono: string; puntaje: number; color: string }) {
@@ -850,6 +897,27 @@ function BarraPuntajeMini({ icono, puntaje, color }: { icono: string; puntaje: n
       <Text style={e.iconoBarraMini}>{icono}</Text>
       <View style={e.pistaBarraMini}>
         <View style={[e.rellenoBarraMini, { width: `${puntaje}%`, backgroundColor: color }]} />
+      </View>
+      <Text style={[e.valorBarraMini, { color }]}>{puntaje}</Text>
+    </View>
+  );
+}
+
+/** BarraPuntajeMini con animación de llenado */
+function BarraPuntajeMiniAnimada({ icono, puntaje, color }: { icono: string; puntaje: number; color: string }) {
+  const anchura = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    anchura.setValue(0);
+    Animated.timing(anchura, { toValue: puntaje, duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+  }, [puntaje]);
+  return (
+    <View style={e.filaBarraMini}>
+      <Text style={e.iconoBarraMini}>{icono}</Text>
+      <View style={e.pistaBarraMini}>
+        <Animated.View style={[e.rellenoBarraMini, {
+          backgroundColor: color,
+          width: anchura.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'], extrapolate: 'clamp' }),
+        }]} />
       </View>
       <Text style={[e.valorBarraMini, { color }]}>{puntaje}</Text>
     </View>
@@ -918,6 +986,12 @@ function BarraZonas({
   etiqueta: string; icono: string;
   zonas: { normal: number; precaucion: number; alerta: number };
 }) {
+  const animAncho = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    animAncho.setValue(0);
+    Animated.timing(animAncho, { toValue: 1, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+  }, [zonas.normal, zonas.precaucion, zonas.alerta]);
+
   return (
     <View style={e.filaZona}>
       <View style={e.infoZona}>
@@ -927,13 +1001,22 @@ function BarraZonas({
       <View style={e.barraZonaContenedor}>
         <View style={e.barraZonaPista}>
           {zonas.normal > 0 && (
-            <View style={[e.segmentoZona, { flex: zonas.normal, backgroundColor: Colores.seguro }]} />
+            <Animated.View style={[e.segmentoZona, {
+              flex: animAncho.interpolate({ inputRange: [0, 1], outputRange: [0.001, zonas.normal] }),
+              backgroundColor: Colores.seguro,
+            }]} />
           )}
           {zonas.precaucion > 0 && (
-            <View style={[e.segmentoZona, { flex: zonas.precaucion, backgroundColor: Colores.advertencia }]} />
+            <Animated.View style={[e.segmentoZona, {
+              flex: animAncho.interpolate({ inputRange: [0, 1], outputRange: [0.001, zonas.precaucion] }),
+              backgroundColor: Colores.advertencia,
+            }]} />
           )}
           {zonas.alerta > 0 && (
-            <View style={[e.segmentoZona, { flex: zonas.alerta, backgroundColor: Colores.peligro }]} />
+            <Animated.View style={[e.segmentoZona, {
+              flex: animAncho.interpolate({ inputRange: [0, 1], outputRange: [0.001, zonas.alerta] }),
+              backgroundColor: Colores.peligro,
+            }]} />
           )}
         </View>
         <View style={e.filaPorcentajes}>
@@ -1076,13 +1159,31 @@ const e = StyleSheet.create({
   contenedor: { flex: 1, backgroundColor: Colores.fondo },
 
   // Encabezado
-  zonaEncabezado: { backgroundColor: Colores.fondo, paddingHorizontal: 20 },
+  zonaEncabezado: { paddingHorizontal: 20, paddingBottom: 4 },
   espacioSuperior: { height: 54 },
   filaEncabezado: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   tituloEncabezado: { fontSize: 26, fontWeight: '900', color: Colores.textoOscuro, letterSpacing: -0.5 },
   subtituloEncabezado: { fontSize: 13, color: Colores.textoClaro, fontWeight: '500', marginTop: 2 },
-  puntoVivo: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', opacity: 0.3 },
+  textoActualizado: { fontSize: 11, color: Colores.textoClaro, fontWeight: '500', marginTop: 6, marginBottom: 4 },
+  puntoVivo: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   puntoVivoInterno: { width: 12, height: 12, borderRadius: 6 },
+
+  // Sección unificada (tarjeta contenedora para secciones 2-5)
+  seccionMargen: { marginHorizontal: 20, marginBottom: 16 },
+  tarjetaSeccionUnificada: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  contenidoSinEventos: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
 
   // Selector de período
   contenedorPildora: { paddingHorizontal: 24, marginTop: 18, marginBottom: 16 },
@@ -1198,16 +1299,11 @@ const e = StyleSheet.create({
   filaTendencias: { flexDirection: 'row', gap: 10 },
   tarjetaTendencia: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    backgroundColor: Colores.fondo,
+    borderRadius: 16,
     padding: 14,
     alignItems: 'center',
     borderTopWidth: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 3,
   },
   iconoTendencia: { fontSize: 22, marginBottom: 4 },
   tituloTendencia: { fontSize: 11, fontWeight: '700', color: Colores.textoClaro, marginBottom: 4 },
@@ -1229,15 +1325,11 @@ const e = StyleSheet.create({
 
   // Detalle tendencias
   tarjetaDetalleTendencia: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: Colores.fondo,
+    borderRadius: 14,
+    padding: 14,
     borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+    marginBottom: 10,
   },
   filaDetalleTendenciaTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   iconoDetalleTendencia: { fontSize: 20 },
@@ -1301,15 +1393,11 @@ const e = StyleSheet.create({
 
   // Detalle zonas
   tarjetaDetalleZona: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: Colores.fondo,
+    borderRadius: 14,
     padding: 14,
     borderLeftWidth: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+    marginBottom: 10,
   },
   filaDetalleZonaTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   iconoDetalleZona: { fontSize: 18 },
@@ -1347,14 +1435,7 @@ const e = StyleSheet.create({
 
   // Detalle actividad
   tarjetaDetalleActividad: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+    marginTop: 4,
   },
   tituloDetalleActividad: { fontSize: 15, fontWeight: '800', color: Colores.textoOscuro, marginBottom: 6 },
   introActividad: { fontSize: 12, fontWeight: '500', color: Colores.textoClaro, lineHeight: 17, marginBottom: 14 },
