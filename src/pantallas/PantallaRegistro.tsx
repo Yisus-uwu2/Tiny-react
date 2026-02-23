@@ -1,34 +1,30 @@
 /**
- * PantallaRegistro — Formulario de registro del neonato.
- * Tarjetas glass, campos animados, validación y navegación a carga.
+ * PantallaRegistro — Formulario multi-paso del neonato.
+ * Progress stepper, chips seleccionables, campos limpios y animaciones spring.
  */
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, Platform, Animated, Easing,
-  KeyboardAvoidingView, Alert,
+  KeyboardAvoidingView, Alert, Dimensions, LayoutAnimation, UIManager,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { Colores } from '../constantes/colores';
 
-// Paleta específica de registro (lavanda pastel)
-const R = {
-  bgTop: '#EDE9FE',
-  bgBottom: '#FAFAFE',
-  cardBg: 'rgba(255,255,255,0.82)',
-  inputFill: '#F5F3FF',
-  borderDefault: '#DDD6FE',
-  borderFocus: '#A78BFA',
-  labelColor: '#6D5EB0',
-  titleColor: '#4C3D8F',
-  headerTitle: '#2D2463',
-  subtitle: '#9B8EC4',
-  gradStart: '#C4B5FD',
-  gradEnd: '#8B5CF6',
-  badgeColor: '#9B8EC4',
-};
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
-interface DatosFormulario {
+const { width: ANCHO } = Dimensions.get('window');
+
+const PASOS = [
+  { titulo: 'Datos del bebé', icono: '👶', desc: 'Información básica' },
+  { titulo: 'Nacimiento', icono: '🏥', desc: 'Detalles del parto' },
+  { titulo: 'Clínico', icono: '💊', desc: 'Historial médico' },
+];
+
+interface DatosForm {
   nombre: string;
   fechaNac: Date | null;
   horaNac: Date | null;
@@ -48,7 +44,7 @@ interface DatosFormulario {
   antecedentes: string;
 }
 
-const formularioInicial: DatosFormulario = {
+const FORM_INIT: DatosForm = {
   nombre: '', fechaNac: null, horaNac: null, sexo: '', peso: '', talla: '',
   historiaClinica: '', nombrePadres: '', contactoEmergencia: '',
   edadGestacional: '', apgar1: '', apgar5: '', grupoSanguineo: '',
@@ -56,381 +52,338 @@ const formularioInicial: DatosFormulario = {
 };
 
 export default function PantallaRegistro({ navigation }: any) {
-  const [formulario, setFormulario] = useState<DatosFormulario>(formularioInicial);
-  const [errores, setErrores]       = useState<Record<string, boolean>>({});
+  const [form, setForm] = useState<DatosForm>(FORM_INIT);
+  const [errores, setErrores] = useState<Record<string, boolean>>({});
+  const [paso, setPaso] = useState(0);
   const [mostrarFecha, setMostrarFecha] = useState(false);
-  const [mostrarHora, setMostrarHora]   = useState(false);
-  const [mostrarSexo, setMostrarSexo]   = useState(false);
-  const [mostrarParto, setMostrarParto] = useState(false);
+  const [mostrarHora, setMostrarHora] = useState(false);
 
-  // Animaciones de entrada
-  const animEncabezado = useRef(new Animated.Value(0)).current;
-  const animTarjeta1   = useRef(new Animated.Value(0)).current;
-  const animTarjeta2   = useRef(new Animated.Value(0)).current;
-  const animBoton      = useRef(new Animated.Value(0)).current;
-  const animFlotante   = useRef(new Animated.Value(0)).current;
+  const animEntrada = useRef(new Animated.Value(0)).current;
+  const animContenido = useRef(new Animated.Value(0)).current;
+  const animFlotante = useRef(new Animated.Value(0)).current;
+  const animProgreso = useRef(new Animated.Value(0)).current;
+  const escalaBtn = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.stagger(160, [
-      Animated.spring(animEncabezado, { toValue: 1, useNativeDriver: true, tension: 50, friction: 9 }),
-      Animated.spring(animTarjeta1,   { toValue: 1, useNativeDriver: true, tension: 50, friction: 9 }),
-      Animated.spring(animTarjeta2,   { toValue: 1, useNativeDriver: true, tension: 50, friction: 9 }),
-      Animated.spring(animBoton,      { toValue: 1, useNativeDriver: true, tension: 50, friction: 9 }),
+    Animated.stagger(100, [
+      Animated.spring(animEntrada, { toValue: 1, useNativeDriver: true, tension: 50, friction: 9 }),
+      Animated.spring(animContenido, { toValue: 1, useNativeDriver: true, tension: 50, friction: 9 }),
     ]).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(animFlotante, { toValue: -8, duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(animFlotante, { toValue: 0,  duration: 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ])
-    ).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(animFlotante, { toValue: -6, duration: 2500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(animFlotante, { toValue: 0, duration: 2500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+    ])).start();
   }, []);
 
-  const entrada = (anim: Animated.Value) => ({
-    opacity: anim,
-    transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) }],
-  });
+  useEffect(() => {
+    Animated.spring(animProgreso, { toValue: (paso + 1) / PASOS.length, useNativeDriver: false, tension: 60, friction: 12 }).start();
+  }, [paso]);
 
-  const actualizar = (campo: keyof DatosFormulario) => (valor: string) => {
-    setFormulario(prev => ({ ...prev, [campo]: valor }));
-    if (errores[campo]) setErrores(prev => ({ ...prev, [campo]: false }));
+  const animarCambio = useCallback(() => {
+    animContenido.setValue(0);
+    Animated.spring(animContenido, { toValue: 1, useNativeDriver: true, tension: 60, friction: 10 }).start();
+  }, []);
+
+  const set = (campo: keyof DatosForm) => (v: string) => {
+    setForm(p => ({ ...p, [campo]: v }));
+    if (errores[campo]) setErrores(p => ({ ...p, [campo]: false }));
   };
 
-  const validar = (): boolean => {
-    const requeridos: (keyof DatosFormulario)[] = [
-      'nombre', 'fechaNac', 'horaNac', 'peso', 'talla',
-      'historiaClinica', 'nombrePadres', 'contactoEmergencia',
-      'edadGestacional', 'apgar1', 'apgar5', 'grupoSanguineo',
-      'complicaciones', 'alergias', 'antecedentes',
-    ];
-    const nuevosErrores: Record<string, boolean> = {};
-    let valido = true;
-    for (const campo of requeridos) {
-      const val = formulario[campo];
-      if (!val || (typeof val === 'string' && val.trim() === '')) {
-        nuevosErrores[campo] = true;
-        valido = false;
-      }
+  const REQUERIDOS: (keyof DatosForm)[][] = [
+    ['nombre', 'peso', 'talla', 'nombrePadres', 'contactoEmergencia'],
+    ['edadGestacional', 'apgar1', 'apgar5', 'grupoSanguineo'],
+    ['historiaClinica', 'complicaciones', 'alergias', 'antecedentes'],
+  ];
+
+  const validar = () => {
+    const errs: Record<string, boolean> = {};
+    let ok = true;
+    for (const c of REQUERIDOS[paso]) {
+      const v = form[c];
+      if (!v || (typeof v === 'string' && !v.trim())) { errs[c] = true; ok = false; }
     }
-    setErrores(nuevosErrores);
-    return valido;
+    setErrores(errs);
+    return ok;
   };
 
-  const guardar = () => {
-    if (validar()) {
-      navigation.replace('Carga');
+  const siguiente = () => {
+    if (!validar()) { Alert.alert('Campos obligatorios', 'Completa los campos marcados.'); return; }
+    if (paso < PASOS.length - 1) {
+      LayoutAnimation.configureNext(LayoutAnimation.create(250, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
+      setPaso(p => p + 1);
+      animarCambio();
     } else {
-      Alert.alert('Campos requeridos', 'Por favor completa todos los campos obligatorios.');
+      navigation.replace('Carga');
     }
   };
 
-  const omitir = () => navigation.replace('Carga');
+  const anterior = () => {
+    if (paso > 0) {
+      LayoutAnimation.configureNext(LayoutAnimation.create(250, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
+      setPaso(p => p - 1);
+      setErrores({});
+      animarCambio();
+    }
+  };
 
-  const formatoFecha = (d: Date | null) =>
-    d ? `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}` : '';
+  const fmtFecha = (d: Date | null) => d ? `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}` : '';
+  const fmtHora = (d: Date | null) => d ? `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}` : '';
 
-  const formatoHora = (d: Date | null) =>
-    d ? `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}` : '';
+  const entAnim = {
+    opacity: animContenido,
+    transform: [{ translateY: animContenido.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }],
+  };
+
+  const renderPaso = () => {
+    switch (paso) {
+      case 0: return (
+        <Animated.View style={entAnim}>
+          <Campo label="Nombre completo del bebé" valor={form.nombre} onChange={set('nombre')} error={errores.nombre} placeholder="Ej: Emma Valentina" />
+          <View style={s.fila}>
+            <View style={s.mitad}>
+              <TouchableOpacity onPress={() => setMostrarFecha(true)} activeOpacity={0.7}>
+                <Campo label="Fecha de nacimiento" valor={fmtFecha(form.fechaNac)} editable={false} error={errores.fechaNac} placeholder="DD/MM/AAAA" />
+              </TouchableOpacity>
+            </View>
+            <View style={s.mitad}>
+              <TouchableOpacity onPress={() => setMostrarHora(true)} activeOpacity={0.7}>
+                <Campo label="Hora de nacimiento" valor={fmtHora(form.horaNac)} editable={false} error={errores.horaNac} placeholder="HH:MM" />
+              </TouchableOpacity>
+            </View>
+          </View>
+          {mostrarFecha && <DateTimePicker value={form.fechaNac || new Date()} mode="date" display={Platform.OS === 'ios' ? 'spinner' : 'default'} maximumDate={new Date()} minimumDate={new Date(2015,0,1)} onChange={(_,d) => { setMostrarFecha(false); if(d) { setForm(p => ({...p, fechaNac: d})); if(errores.fechaNac) setErrores(p => ({...p, fechaNac: false})); }}} />}
+          {mostrarHora && <DateTimePicker value={form.horaNac || new Date()} mode="time" is24Hour display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={(_,h) => { setMostrarHora(false); if(h) { setForm(p => ({...p, horaNac: h})); if(errores.horaNac) setErrores(p => ({...p, horaNac: false})); }}} />}
+          <Text style={s.labelGrupo}>Sexo</Text>
+          <Chips opciones={['Masculino','Femenino','Otro']} valor={form.sexo} onSelect={v => setForm(p => ({...p, sexo: v}))} />
+          <View style={s.fila}>
+            <View style={s.mitad}><Campo label="Peso (kg)" valor={form.peso} onChange={set('peso')} keyboardType="decimal-pad" error={errores.peso} placeholder="3.2" /></View>
+            <View style={s.mitad}><Campo label="Talla (cm)" valor={form.talla} onChange={set('talla')} keyboardType="decimal-pad" error={errores.talla} placeholder="49" /></View>
+          </View>
+          <Campo label="Nombre de padres o tutores" valor={form.nombrePadres} onChange={set('nombrePadres')} error={errores.nombrePadres} placeholder="María López, Carlos López" />
+          <Campo label="Contacto de emergencia" valor={form.contactoEmergencia} onChange={set('contactoEmergencia')} keyboardType="phone-pad" error={errores.contactoEmergencia} placeholder="+52 55 1234 5678" />
+        </Animated.View>
+      );
+      case 1: return (
+        <Animated.View style={entAnim}>
+          <Campo label="Edad gestacional (semanas)" valor={form.edadGestacional} onChange={set('edadGestacional')} keyboardType="number-pad" error={errores.edadGestacional} placeholder="38" />
+          <View style={s.fila}>
+            <View style={s.mitad}><Campo label="Apgar 1 min" valor={form.apgar1} onChange={set('apgar1')} keyboardType="number-pad" error={errores.apgar1} placeholder="8" /></View>
+            <View style={s.mitad}><Campo label="Apgar 5 min" valor={form.apgar5} onChange={set('apgar5')} keyboardType="number-pad" error={errores.apgar5} placeholder="9" /></View>
+          </View>
+          <Campo label="Grupo sanguíneo" valor={form.grupoSanguineo} onChange={set('grupoSanguineo')} error={errores.grupoSanguineo} placeholder="O+" />
+          <Text style={s.labelGrupo}>Tipo de parto</Text>
+          <Chips opciones={['Natural','Cesárea','Instrumentado']} valor={form.tipoParto} onSelect={v => setForm(p => ({...p, tipoParto: v}))} />
+        </Animated.View>
+      );
+      case 2: return (
+        <Animated.View style={entAnim}>
+          <Campo label="Historia clínica / ID" valor={form.historiaClinica} onChange={set('historiaClinica')} error={errores.historiaClinica} placeholder="HC-2026-001" />
+          <Campo label="Complicaciones al nacer" valor={form.complicaciones} onChange={set('complicaciones')} error={errores.complicaciones} placeholder="Ninguna" />
+          <Campo label="Alergias conocidas" valor={form.alergias} onChange={set('alergias')} error={errores.alergias} placeholder="Sin alergias conocidas" />
+          <Campo label="Antecedentes médicos" valor={form.antecedentes} onChange={set('antecedentes')} error={errores.antecedentes} placeholder="Describir antecedentes..." multiline />
+        </Animated.View>
+      );
+      default: return null;
+    }
+  };
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <LinearGradient colors={[R.bgTop, R.bgBottom]} style={s.fondo}>
-        <ScrollView contentContainerStyle={s.contenido} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <LinearGradient colors={['#F3EEFF','#FAF8FF', Colores.fondo]} locations={[0,0.35,1]} style={s.bg}>
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-          {/* ENCABEZADO */}
-          <Animated.View style={[s.envolturioEncabezado, entrada(animEncabezado)]}>
-            <Animated.View style={[s.circuloIcono, { transform: [{ translateY: animFlotante }] }]}>
-              <LinearGradient colors={[R.gradStart, R.gradEnd]} style={s.degradadoIcono}>
-                <Text style={s.emojiIcono}>👶</Text>
+          {/* Encabezado */}
+          <Animated.View style={[s.header, { opacity: animEntrada, transform: [{ translateY: animEntrada.interpolate({ inputRange:[0,1], outputRange:[20,0] }) }] }]}>
+            <Animated.View style={{ transform: [{ translateY: animFlotante }] }}>
+              <LinearGradient colors={[Colores.primarioClaro, Colores.primario]} style={s.logoCircle}>
+                <Text style={{ fontSize: 34 }}>👶</Text>
               </LinearGradient>
             </Animated.View>
-            <Text style={s.tituloEncabezado}>Registro del Neonato</Text>
-            <Text style={s.subtituloEncabezado}>Completa la información de tu bebé</Text>
+            <Text style={s.headerTitle}>Registro del bebé</Text>
+            <Text style={s.headerSub}>Configura el monitoreo de tu neonato</Text>
           </Animated.View>
 
-          {/* TARJETA 1: Identificación */}
-          <Animated.View style={[s.tarjetaGlass, entrada(animTarjeta1)]}>
-            <View style={s.encabezadoTarjeta}>
-              <View style={s.iconoTarjeta}><Text style={s.emojiTarjeta}>🍼</Text></View>
-              <Text style={s.tituloTarjeta}>Identificación del neonato</Text>
+          {/* Stepper */}
+          <View style={s.stepper}>
+            {PASOS.map((p, i) => {
+              const activo = i === paso;
+              const hecho = i < paso;
+              return (
+                <View key={i} style={s.stepDot}>
+                  <View style={[s.stepCircle, activo && s.stepCircleActive, hecho && s.stepCircleDone]}>
+                    {hecho ? <Text style={s.stepCheck}>✓</Text> : <Text style={[s.stepNum, activo && s.stepNumActive]}>{i+1}</Text>}
+                  </View>
+                  <Text style={[s.stepLabel, activo && s.stepLabelActive]} numberOfLines={1}>{p.titulo}</Text>
+                </View>
+              );
+            })}
+            <View style={s.stepLine}>
+              <Animated.View style={[s.stepLineFill, { width: animProgreso.interpolate({ inputRange:[0,1], outputRange:['0%','100%'] }) }]} />
             </View>
+          </View>
 
-            <CampoFormulario etiqueta="Nombre completo" icono="👤" valor={formulario.nombre} alCambiar={actualizar('nombre')} error={errores.nombre} />
-
-            <View style={s.fila}>
-              <View style={s.mitad}>
-                <TouchableOpacity onPress={() => setMostrarFecha(true)} activeOpacity={0.7}>
-                  <CampoFormulario etiqueta="Fecha de nacimiento" icono="📅" valor={formatoFecha(formulario.fechaNac)} editable={false} error={errores.fechaNac} placeholder="DD/MM/AAAA" />
-                </TouchableOpacity>
-              </View>
-              <View style={s.mitad}>
-                <TouchableOpacity onPress={() => setMostrarHora(true)} activeOpacity={0.7}>
-                  <CampoFormulario etiqueta="Hora de nacimiento" icono="🕐" valor={formatoHora(formulario.horaNac)} editable={false} error={errores.horaNac} placeholder="HH:MM" />
-                </TouchableOpacity>
+          {/* Tarjeta */}
+          <View style={s.card}>
+            <View style={s.cardHeader}>
+              <Text style={{ fontSize: 26 }}>{PASOS[paso].icono}</Text>
+              <View>
+                <Text style={s.cardTitle}>{PASOS[paso].titulo}</Text>
+                <Text style={s.cardDesc}>{PASOS[paso].desc}</Text>
               </View>
             </View>
+            <View style={s.divider} />
+            {renderPaso()}
+          </View>
 
-            {mostrarFecha && (
-              <DateTimePicker
-                value={formulario.fechaNac || new Date()}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                maximumDate={new Date()}
-                minimumDate={new Date(2015, 0, 1)}
-                onChange={(_, fecha) => {
-                  setMostrarFecha(false);
-                  if (fecha) {
-                    setFormulario(prev => ({ ...prev, fechaNac: fecha }));
-                    if (errores.fechaNac) setErrores(prev => ({ ...prev, fechaNac: false }));
-                  }
-                }}
-              />
+          {/* Navegación */}
+          <View style={s.navRow}>
+            {paso > 0 && (
+              <TouchableOpacity style={s.btnBack} onPress={anterior} activeOpacity={0.7}>
+                <Text style={s.btnBackText}>← Anterior</Text>
+              </TouchableOpacity>
             )}
-            {mostrarHora && (
-              <DateTimePicker
-                value={formulario.horaNac || new Date()}
-                mode="time"
-                is24Hour
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_, hora) => {
-                  setMostrarHora(false);
-                  if (hora) {
-                    setFormulario(prev => ({ ...prev, horaNac: hora }));
-                    if (errores.horaNac) setErrores(prev => ({ ...prev, horaNac: false }));
-                  }
-                }}
-              />
-            )}
-
-            <CampoDesplegable
-              etiqueta="Sexo" icono="⚤" valor={formulario.sexo}
-              opciones={['Masculino', 'Femenino', 'Otro']}
-              abierto={mostrarSexo} alAlternar={() => setMostrarSexo(!mostrarSexo)}
-              alSeleccionar={(v) => { setFormulario(p => ({ ...p, sexo: v })); setMostrarSexo(false); }}
-            />
-
-            <View style={s.fila}>
-              <View style={s.mitad}>
-                <CampoFormulario etiqueta="Peso al nacer (kg)" icono="⚖️" valor={formulario.peso} alCambiar={actualizar('peso')} keyboardType="decimal-pad" error={errores.peso} />
-              </View>
-              <View style={s.mitad}>
-                <CampoFormulario etiqueta="Talla al nacer (cm)" icono="📏" valor={formulario.talla} alCambiar={actualizar('talla')} keyboardType="decimal-pad" error={errores.talla} />
-              </View>
+            <View style={{ flex: 1 }}>
+              <TouchableOpacity activeOpacity={1}
+                onPressIn={() => Animated.spring(escalaBtn, { toValue: 0.96, useNativeDriver: true, tension: 120, friction: 8 }).start()}
+                onPressOut={() => { Animated.spring(escalaBtn, { toValue: 1, useNativeDriver: true, tension: 40, friction: 6 }).start(); siguiente(); }}>
+                <Animated.View style={{ transform: [{ scale: escalaBtn }] }}>
+                  <LinearGradient colors={[Colores.primarioClaro, Colores.primario]} start={{x:0,y:0}} end={{x:1,y:0}} style={s.btnNext}>
+                    <Text style={s.btnNextText}>{paso === PASOS.length - 1 ? 'Completar registro' : 'Siguiente →'}</Text>
+                  </LinearGradient>
+                </Animated.View>
+              </TouchableOpacity>
             </View>
+          </View>
 
-            <CampoFormulario etiqueta="Historia clínica / ID interno" icono="🏷️" valor={formulario.historiaClinica} alCambiar={actualizar('historiaClinica')} error={errores.historiaClinica} />
-            <CampoFormulario etiqueta="Nombre de los padres o tutores" icono="👨‍👩‍👧" valor={formulario.nombrePadres} alCambiar={actualizar('nombrePadres')} error={errores.nombrePadres} />
-            <CampoFormulario etiqueta="Contacto de emergencia" icono="📞" valor={formulario.contactoEmergencia} alCambiar={actualizar('contactoEmergencia')} keyboardType="phone-pad" error={errores.contactoEmergencia} />
-          </Animated.View>
+          <TouchableOpacity style={s.skipBtn} onPress={() => navigation.replace('Carga')} activeOpacity={0.7}>
+            <Text style={s.skipText}>Omitir por ahora</Text>
+          </TouchableOpacity>
+          <Text style={s.progressText}>Paso {paso + 1} de {PASOS.length}</Text>
 
-          {/* TARJETA 2: Información clínica */}
-          <Animated.View style={[s.tarjetaGlass, entrada(animTarjeta2)]}>
-            <View style={s.encabezadoTarjeta}>
-              <View style={s.iconoTarjeta}><Text style={s.emojiTarjeta}>🏥</Text></View>
-              <Text style={s.tituloTarjeta}>Información clínica base</Text>
-            </View>
-
-            <CampoFormulario etiqueta="Edad gestacional (semanas)" icono="📆" valor={formulario.edadGestacional} alCambiar={actualizar('edadGestacional')} keyboardType="number-pad" error={errores.edadGestacional} />
-
-            <View style={s.fila}>
-              <View style={s.mitad}>
-                <CampoFormulario etiqueta="Apgar 1 min" icono="⏱️" valor={formulario.apgar1} alCambiar={actualizar('apgar1')} keyboardType="number-pad" error={errores.apgar1} />
-              </View>
-              <View style={s.mitad}>
-                <CampoFormulario etiqueta="Apgar 5 min" icono="⏱️" valor={formulario.apgar5} alCambiar={actualizar('apgar5')} keyboardType="number-pad" error={errores.apgar5} />
-              </View>
-            </View>
-
-            <CampoFormulario etiqueta="Grupo sanguíneo" icono="🩸" valor={formulario.grupoSanguineo} alCambiar={actualizar('grupoSanguineo')} error={errores.grupoSanguineo} />
-
-            <CampoDesplegable
-              etiqueta="Tipo de parto" icono="🏥" valor={formulario.tipoParto}
-              opciones={['Natural', 'Cesárea', 'Instrumentado']}
-              abierto={mostrarParto} alAlternar={() => setMostrarParto(!mostrarParto)}
-              alSeleccionar={(v) => { setFormulario(p => ({ ...p, tipoParto: v })); setMostrarParto(false); }}
-            />
-
-            <CampoFormulario etiqueta="Complicaciones al nacer" icono="⚠️" valor={formulario.complicaciones} alCambiar={actualizar('complicaciones')} error={errores.complicaciones} />
-            <CampoFormulario etiqueta="Alergias conocidas" icono="🚨" valor={formulario.alergias} alCambiar={actualizar('alergias')} error={errores.alergias} />
-            <CampoFormulario etiqueta="Antecedentes médicos relevantes" icono="📋" valor={formulario.antecedentes} alCambiar={actualizar('antecedentes')} error={errores.antecedentes} multiline />
-          </Animated.View>
-
-          {/* BOTONES */}
-          <Animated.View style={entrada(animBoton)}>
-            <TouchableOpacity onPress={guardar} activeOpacity={0.85}>
-              <LinearGradient colors={[R.gradStart, R.gradEnd]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.botonGuardar}>
-                <Text style={s.iconoGuardar}>✓</Text>
-                <Text style={s.textoGuardar}>Guardar registro</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={s.botonOmitir} onPress={omitir} activeOpacity={0.7}>
-              <Text style={s.textoOmitir}>Continuar después</Text>
-              <Text style={s.flechaOmitir}>→</Text>
-            </TouchableOpacity>
-          </Animated.View>
-
-          {/* Insignias de confianza */}
-          <Animated.View style={[s.filaConfianza, entrada(animBoton)]}>
-            <View style={s.insigniaConfianza}>
-              <Text style={s.iconoConfianza}>🛡️</Text>
-              <Text style={s.textoConfianza}>Datos seguros</Text>
-            </View>
-            <View style={s.insigniaConfianza}>
-              <Text style={s.iconoConfianza}>🔒</Text>
-              <Text style={s.textoConfianza}>Privacidad garantizada</Text>
-            </View>
-          </Animated.View>
-
-          <View style={{ height: 40 }} />
+          <View style={{ height: 32 }} />
         </ScrollView>
       </LinearGradient>
     </KeyboardAvoidingView>
   );
 }
 
-// ── Sub-componentes ──────────────────────────────────────────────
+// ── Sub-componentes ──
 
-function CampoFormulario({
-  etiqueta, icono, valor, alCambiar, keyboardType, error,
-  editable = true, placeholder, multiline,
-}: {
-  etiqueta: string; icono: string; valor?: string; alCambiar?: (t: string) => void;
-  keyboardType?: any; error?: boolean; editable?: boolean; placeholder?: string; multiline?: boolean;
+function Campo({ label, valor, onChange, keyboardType, error, editable = true, placeholder, multiline }: {
+  label: string; valor?: string; onChange?: (t: string) => void; keyboardType?: any;
+  error?: boolean; editable?: boolean; placeholder?: string; multiline?: boolean;
 }) {
-  const [enfocado, setEnfocado] = useState(false);
-  const animBorde = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(animBorde, { toValue: enfocado ? 1 : 0, duration: 200, useNativeDriver: false }).start();
-  }, [enfocado]);
-
-  const colorBorde = error
-    ? '#F87171'
-    : animBorde.interpolate({ inputRange: [0, 1], outputRange: [R.borderDefault, R.borderFocus] });
-
+  const [focused, setFocused] = useState(false);
   return (
-    <View style={s.envoltorioCampo}>
-      <Animated.View style={[s.contenedorCampo, { borderColor: colorBorde }, enfocado && s.campoEnfocado, error && s.campoError]}>
-        <Text style={s.iconoCampo}>{icono}</Text>
-        <View style={s.interiorCampo}>
-          <Text style={[s.etiquetaCampo, enfocado && { color: R.borderFocus }]}>{etiqueta}</Text>
-          <TextInput
-            style={[s.campo, multiline && { minHeight: 60, textAlignVertical: 'top' }]}
-            value={valor} onChangeText={alCambiar}
-            onFocus={() => setEnfocado(true)} onBlur={() => setEnfocado(false)}
-            keyboardType={keyboardType} editable={editable}
-            placeholder={placeholder} placeholderTextColor={R.subtitle} multiline={multiline}
-          />
-        </View>
-      </Animated.View>
-      {error && <Text style={s.textoError}>Campo requerido</Text>}
+    <View style={s.fieldWrap}>
+      <Text style={[s.fieldLabel, focused && { color: Colores.primario }, error && { color: '#F87171' }]}>{label}</Text>
+      <View style={[s.fieldBox, focused && s.fieldFocused, error && s.fieldError]}>
+        <TextInput
+          style={[s.fieldInput, multiline && { minHeight: 80, textAlignVertical: 'top' }]}
+          value={valor} onChangeText={onChange}
+          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+          keyboardType={keyboardType} editable={editable}
+          placeholder={placeholder} placeholderTextColor={Colores.textoSutil} multiline={multiline}
+        />
+      </View>
+      {error && <Text style={s.fieldErr}>Este campo es obligatorio</Text>}
     </View>
   );
 }
 
-function CampoDesplegable({
-  etiqueta, icono, valor, opciones, abierto, alAlternar, alSeleccionar,
-}: {
-  etiqueta: string; icono: string; valor: string; opciones: string[];
-  abierto: boolean; alAlternar: () => void; alSeleccionar: (v: string) => void;
-}) {
+function Chips({ opciones, valor, onSelect }: { opciones: string[]; valor: string; onSelect: (v: string) => void }) {
   return (
-    <View style={s.envoltorioCampo}>
-      <TouchableOpacity onPress={alAlternar} activeOpacity={0.7}>
-        <View style={[s.contenedorCampo, s.contenedorDesplegable]}>
-          <Text style={s.iconoCampo}>{icono}</Text>
-          <View style={s.interiorCampo}>
-            <Text style={s.etiquetaCampo}>{etiqueta}</Text>
-            <Text style={[s.campo, !valor && { color: R.subtitle }]}>{valor || 'Seleccionar...'}</Text>
-          </View>
-          <Text style={s.flechaDesplegable}>{abierto ? '▲' : '▼'}</Text>
-        </View>
-      </TouchableOpacity>
-      {abierto && (
-        <View style={s.listaDesplegable}>
-          {opciones.map(op => (
-            <TouchableOpacity
-              key={op}
-              style={[s.itemDesplegable, valor === op && s.itemSeleccionado]}
-              onPress={() => alSeleccionar(op)}
-            >
-              <Text style={[s.textoItem, valor === op && s.textoItemSeleccionado]}>{op}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
+    <View style={s.chipsRow}>
+      {opciones.map(op => {
+        const sel = valor === op;
+        return (
+          <TouchableOpacity key={op} activeOpacity={0.7} onPress={() => onSelect(op)}>
+            <View style={[s.chip, sel && s.chipSel]}>
+              <Text style={[s.chipText, sel && s.chipTextSel]}>{op}</Text>
+            </View>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
 
-// ── Estilos ──────────────────────────────────────────────────────
+// ── Estilos ──
 
 const s = StyleSheet.create({
-  fondo: { flex: 1 },
-  contenido: { paddingHorizontal: 22, paddingVertical: 24 },
+  bg: { flex: 1 },
+  scroll: { paddingHorizontal: 22, paddingTop: 54, paddingBottom: 20 },
 
-  envolturioEncabezado: { alignItems: 'center', marginBottom: 28 },
-  circuloIcono: { marginBottom: 16 },
-  degradadoIcono: {
-    width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center',
-    shadowColor: R.gradEnd, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 8,
+  header: { alignItems: 'center', marginBottom: 24 },
+  logoCircle: {
+    width: 70, height: 70, borderRadius: 35, alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+    shadowColor: Colores.primario, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 8,
   },
-  emojiIcono: { fontSize: 40 },
-  tituloEncabezado: { fontSize: 26, fontWeight: '800', color: R.headerTitle, letterSpacing: 0.5 },
-  subtituloEncabezado: { fontSize: 14, color: R.subtitle, fontWeight: '500', marginTop: 6 },
+  headerTitle: { fontSize: 24, fontWeight: '900', color: Colores.textoOscuro, letterSpacing: -0.3 },
+  headerSub: { fontSize: 13, color: Colores.textoClaro, fontWeight: '500', marginTop: 4 },
 
-  tarjetaGlass: {
-    backgroundColor: R.cardBg, borderRadius: 24, padding: 20, marginBottom: 20,
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.6)',
-    shadowColor: R.gradStart, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.08, shadowRadius: 24, elevation: 4,
+  // Stepper
+  stepper: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, paddingHorizontal: 6, position: 'relative' },
+  stepDot: { alignItems: 'center', width: (ANCHO - 56) / 3 },
+  stepCircle: {
+    width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#EDE9FE', borderWidth: 2, borderColor: Colores.borde, zIndex: 2,
   },
-  encabezadoTarjeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
-  iconoTarjeta: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(139,92,246,0.12)', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  emojiTarjeta: { fontSize: 18 },
-  tituloTarjeta: { fontSize: 17, fontWeight: '700', color: R.titleColor, letterSpacing: 0.2 },
+  stepCircleActive: { backgroundColor: Colores.primario, borderColor: Colores.primario },
+  stepCircleDone: { backgroundColor: Colores.seguro, borderColor: Colores.seguro },
+  stepNum: { fontSize: 13, fontWeight: '800', color: Colores.textoClaro },
+  stepNumActive: { color: '#FFF' },
+  stepCheck: { fontSize: 15, fontWeight: '800', color: '#FFF' },
+  stepLabel: { fontSize: 10, fontWeight: '600', color: Colores.textoClaro, marginTop: 5, textAlign: 'center' },
+  stepLabelActive: { color: Colores.primario, fontWeight: '700' },
+  stepLine: {
+    position: 'absolute', top: 16, left: (ANCHO - 56) / 6 + 6, right: (ANCHO - 56) / 6 + 6,
+    height: 3, backgroundColor: Colores.borde, borderRadius: 1.5, zIndex: 1,
+  },
+  stepLineFill: { height: '100%', backgroundColor: Colores.seguro, borderRadius: 1.5 },
 
+  // Card
+  card: {
+    backgroundColor: '#FFF', borderRadius: 24, padding: 22, marginBottom: 18,
+    shadowColor: '#7C3AED', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 20, elevation: 4,
+  },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  cardTitle: { fontSize: 17, fontWeight: '800', color: Colores.textoOscuro },
+  cardDesc: { fontSize: 12, color: Colores.textoClaro, fontWeight: '500', marginTop: 1 },
+  divider: { height: 1, backgroundColor: Colores.divisor, marginBottom: 16 },
+
+  // Fields
   fila: { flexDirection: 'row', gap: 12 },
   mitad: { flex: 1 },
-
-  envoltorioCampo: { marginBottom: 14 },
-  contenedorCampo: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: R.inputFill, borderRadius: 16,
-    borderWidth: 1, borderColor: R.borderDefault, paddingHorizontal: 14, paddingVertical: 10,
+  fieldWrap: { marginBottom: 14 },
+  fieldLabel: { fontSize: 12, fontWeight: '700', color: Colores.textoMedio, marginBottom: 5, letterSpacing: 0.3 },
+  fieldBox: {
+    backgroundColor: '#F8F6FF', borderRadius: 14, borderWidth: 1.5, borderColor: Colores.borde,
+    paddingHorizontal: 14, paddingVertical: Platform.OS === 'ios' ? 13 : 10,
   },
-  campoEnfocado: { borderColor: R.borderFocus, borderWidth: 1.5, backgroundColor: '#FAFAFE' },
-  campoError: { borderColor: '#F87171', borderWidth: 1.5 },
-  iconoCampo: { fontSize: 18, marginRight: 10, width: 24, textAlign: 'center' },
-  interiorCampo: { flex: 1 },
-  etiquetaCampo: { fontSize: 11, fontWeight: '600', color: R.labelColor, marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
-  campo: { fontSize: 15, color: R.headerTitle, fontWeight: '500', padding: 0, margin: 0 },
-  textoError: { fontSize: 11, color: '#F87171', fontWeight: '600', marginTop: 4, marginLeft: 14 },
+  fieldFocused: { borderColor: Colores.primario, backgroundColor: '#FEFEFF' },
+  fieldError: { borderColor: '#F87171', backgroundColor: '#FFF5F5' },
+  fieldInput: { fontSize: 15, color: Colores.textoOscuro, fontWeight: '500', padding: 0 },
+  fieldErr: { fontSize: 11, color: '#F87171', fontWeight: '600', marginTop: 3, marginLeft: 4 },
 
-  contenedorDesplegable: {},
-  flechaDesplegable: { fontSize: 10, color: R.borderFocus, marginLeft: 8 },
-  listaDesplegable: {
-    backgroundColor: '#FFFFFF', borderRadius: 14, marginTop: 6,
-    borderWidth: 1, borderColor: R.borderDefault, overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
+  // Chips
+  labelGrupo: { fontSize: 12, fontWeight: '700', color: Colores.textoMedio, marginBottom: 8, letterSpacing: 0.3 },
+  chipsRow: { flexDirection: 'row', gap: 10, marginBottom: 14, flexWrap: 'wrap' },
+  chip: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, backgroundColor: '#F3EEFF', borderWidth: 1.5, borderColor: Colores.borde },
+  chipSel: { backgroundColor: Colores.primario, borderColor: Colores.primario },
+  chipText: { fontSize: 13, fontWeight: '600', color: Colores.textoMedio },
+  chipTextSel: { color: '#FFF', fontWeight: '700' },
+
+  // Nav
+  navRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  btnBack: { paddingHorizontal: 18, paddingVertical: 15, borderRadius: 20, backgroundColor: '#F3EEFF', borderWidth: 1.5, borderColor: Colores.borde },
+  btnBackText: { fontSize: 14, fontWeight: '700', color: Colores.primario },
+  btnNext: {
+    alignItems: 'center', justifyContent: 'center', height: 52, borderRadius: 22,
+    shadowColor: Colores.primario, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 6,
   },
-  itemDesplegable: { paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#F3F0FA' },
-  itemSeleccionado: { backgroundColor: '#F5F3FF' },
-  textoItem: { fontSize: 15, color: R.headerTitle, fontWeight: '500' },
-  textoItemSeleccionado: { color: R.gradEnd, fontWeight: '700' },
-
-  botonGuardar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 54, borderRadius: 24,
-    shadowColor: R.gradEnd, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 6,
-  },
-  iconoGuardar: { fontSize: 20, color: '#FFFFFF', marginRight: 10, fontWeight: '800' },
-  textoGuardar: { fontSize: 17, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 },
-
-  botonOmitir: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 12, paddingVertical: 12 },
-  textoOmitir: { fontSize: 15, color: R.labelColor, fontWeight: '600', letterSpacing: 0.3 },
-  flechaOmitir: { fontSize: 18, color: R.labelColor, marginLeft: 6 },
-
-  filaConfianza: { flexDirection: 'row', justifyContent: 'center', gap: 24, marginTop: 20 },
-  insigniaConfianza: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  iconoConfianza: { fontSize: 14 },
-  textoConfianza: { fontSize: 12, color: R.badgeColor, fontWeight: '500' },
+  btnNextText: { fontSize: 16, fontWeight: '800', color: '#FFF', letterSpacing: 0.3 },
+  skipBtn: { alignItems: 'center', paddingVertical: 14 },
+  skipText: { fontSize: 14, color: Colores.textoClaro, fontWeight: '600' },
+  progressText: { textAlign: 'center', fontSize: 12, color: Colores.textoSutil, fontWeight: '600', marginTop: 2 },
 });
