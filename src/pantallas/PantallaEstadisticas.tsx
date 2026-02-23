@@ -8,7 +8,7 @@ import {
   View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity,
   Animated, LayoutAnimation, Platform, UIManager, Easing, RefreshControl,
 } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Polyline } from 'react-native-svg';
 import { useDatosSensor } from '../hooks/useDatosSensor';
 import { Colores } from '../constantes/colores';
 
@@ -104,6 +104,24 @@ export default function PantallaEstadisticas() {
   const animEntrada = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.spring(animEntrada, { toValue: 1, useNativeDriver: true, tension: 50, friction: 9 }).start();
+  }, []);
+
+  // Pulso del punto en vivo
+  const animPulso = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(Animated.sequence([
+      Animated.timing(animPulso, { toValue: 1, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(animPulso, { toValue: 0, duration: 1000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+    ])).start();
+  }, []);
+
+  // Entrada escalonada de secciones inferiores
+  const animResto = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.sequence([
+      Animated.delay(150),
+      Animated.spring(animResto, { toValue: 1, useNativeDriver: true, tension: 50, friction: 9 }),
+    ]).start();
   }, []);
 
   const animPildora = useRef(new Animated.Value(2)).current;
@@ -331,7 +349,7 @@ export default function PantallaEstadisticas() {
   const detalleTendencias = useMemo(() => [
     {
       icono: '❤️', titulo: 'Frecuencia cardíaca', color: Colores.corazon,
-      actual: datos.ritmoCardiaco, unidad: 'bpm', decimales: 0,
+      actual: datos.ritmoCardiaco, unidad: 'bpm', decimales: 0, sparkDatos: datosRC,
       prom: promedio(datosRC), max: datosRC.length ? Math.max(...datosRC) : 0,
       min: datosRC.length ? Math.min(...datosRC) : 0, desv: Math.round(desviacion(datosRC)),
       tendencia: tendenciaRC,
@@ -345,7 +363,7 @@ export default function PantallaEstadisticas() {
     },
     {
       icono: '💧', titulo: 'Saturación de oxígeno', color: Colores.oxigeno,
-      actual: datos.oxigeno, unidad: '%', decimales: 1,
+      actual: datos.oxigeno, unidad: '%', decimales: 1, sparkDatos: datosO2,
       prom: promedio(datosO2, 1), max: datosO2.length ? Math.max(...datosO2) : 0,
       min: datosO2.length ? Math.min(...datosO2) : 0, desv: parseFloat(desviacion(datosO2).toFixed(1)),
       tendencia: tendenciaO2,
@@ -359,7 +377,7 @@ export default function PantallaEstadisticas() {
     },
     {
       icono: '🌡️', titulo: 'Temperatura corporal', color: Colores.temperatura,
-      actual: datos.temperatura, unidad: '°C', decimales: 1,
+      actual: datos.temperatura, unidad: '°C', decimales: 1, sparkDatos: datosTemp,
       prom: promedio(datosTemp, 1), max: datosTemp.length ? parseFloat(Math.max(...datosTemp).toFixed(1)) : 0,
       min: datosTemp.length ? parseFloat(Math.min(...datosTemp).toFixed(1)) : 0,
       desv: parseFloat(desviacion(datosTemp).toFixed(2)),
@@ -441,9 +459,13 @@ export default function PantallaEstadisticas() {
             <Text style={e.tituloEncabezado}>Estadísticas</Text>
             <Text style={e.subtituloEncabezado}>Análisis detallado de salud</Text>
           </View>
-          <View style={[e.puntoVivo, { backgroundColor: datos.conectado ? Colores.seguro : Colores.peligro }]}>
+          <Animated.View style={[e.puntoVivo, {
+            backgroundColor: datos.conectado ? Colores.seguro : Colores.peligro,
+            opacity: animPulso.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0.8] }),
+            transform: [{ scale: animPulso.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.15] }) }],
+          }]}>
             <View style={[e.puntoVivoInterno, { backgroundColor: datos.conectado ? Colores.seguro : Colores.peligro }]} />
-          </View>
+          </Animated.View>
         </View>
       </View>
 
@@ -478,6 +500,21 @@ export default function PantallaEstadisticas() {
               </TouchableOpacity>
             );
           })}
+        </View>
+      </View>
+
+      {/* ── BARRA RESUMEN ── */}
+      <View style={e.barraResumen}>
+        <View style={[e.chipResumen, { backgroundColor: colorPuntaje + '18' }]}>
+          <Text style={[e.chipResumenTexto, { color: colorPuntaje }]}>🏥 {puntajeGeneral}/100</Text>
+        </View>
+        <View style={[e.chipResumen, { backgroundColor: (tendenciaRC === 'estable' && tendenciaO2 === 'estable' && tendenciaTemp === 'estable' ? Colores.seguro : Colores.advertencia) + '18' }]}>
+          <Text style={[e.chipResumenTexto, { color: tendenciaRC === 'estable' && tendenciaO2 === 'estable' && tendenciaTemp === 'estable' ? Colores.seguroOscuro : Colores.advertenciaOscuro }]}>
+            {tendenciaRC === 'estable' && tendenciaO2 === 'estable' && tendenciaTemp === 'estable' ? '→ Estable' : '↕ Variable'}
+          </Text>
+        </View>
+        <View style={[e.chipResumen, { backgroundColor: Colores.seguro + '18' }]}>
+          <Text style={[e.chipResumenTexto, { color: Colores.seguroOscuro }]}>✓ {zonasRC.normal}% normal</Text>
         </View>
       </View>
 
@@ -539,6 +576,7 @@ export default function PantallaEstadisticas() {
         </Animated.View>
       </TouchableOpacity>
 
+      <Animated.View style={{ opacity: animResto, transform: [{ translateY: animResto.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }}>
       {/* ═══════════════════════════════════════════════════════
           2. TENDENCIAS (expandible)
           ═══════════════════════════════════════════════════════ */}
@@ -566,6 +604,7 @@ export default function PantallaEstadisticas() {
               tendencia={dt.tendencia}
               color={dt.color}
               decimales={dt.decimales}
+              sparkDatos={dt.sparkDatos}
             />
           ))}
         </View>
@@ -751,6 +790,7 @@ export default function PantallaEstadisticas() {
           </View>
         )}
       </View>
+      </Animated.View>
     </ScrollView>
   );
 }
@@ -817,11 +857,11 @@ function BarraPuntajeMini({ icono, puntaje, color }: { icono: string; puntaje: n
 }
 
 function TarjetaTendenciaCompacta({
-  icono, titulo, valor, unidad, prom, tendencia, color, decimales,
+  icono, titulo, valor, unidad, prom, tendencia, color, decimales, sparkDatos,
 }: {
   icono: string; titulo: string; valor: number; unidad: string;
   prom: number; tendencia: 'subiendo' | 'bajando' | 'estable';
-  color: string; decimales: number;
+  color: string; decimales: number; sparkDatos?: number[];
 }) {
   const flechas = { subiendo: '↑', bajando: '↓', estable: '→' };
   const colorTendencia = tendencia === 'estable' ? Colores.seguro
@@ -849,6 +889,15 @@ function TarjetaTendenciaCompacta({
           {flechas[tendencia]}
         </Text>
       </View>
+      {sparkDatos && sparkDatos.length >= 2 && (() => {
+        const mn = Math.min(...sparkDatos), mx = Math.max(...sparkDatos), rg = mx - mn || 1;
+        const pts = sparkDatos.map((v, i) => `${(i / (sparkDatos.length - 1)) * 50},${16 - ((v - mn) / rg) * 12 - 2}`).join(' ');
+        return (
+          <Svg width={50} height={16} style={{ marginTop: 6, alignSelf: 'center', opacity: 0.5 }}>
+            <Polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        );
+      })()}
     </View>
   );
 }
@@ -909,6 +958,12 @@ function GraficoDonut({ distribucion }: { distribucion: { dormido: number; tranq
   const cy = tam / 2;
   const circ = 2 * Math.PI * radio;
 
+  const animDonut = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    animDonut.setValue(0);
+    Animated.spring(animDonut, { toValue: 1, useNativeDriver: true, tension: 40, friction: 8 }).start();
+  }, [distribucion.dormido, distribucion.tranquilo, distribucion.activo, distribucion.llorando]);
+
   const colores = ['#8B5CF6', Colores.seguro, Colores.actividad, Colores.peligro];
   const valores = [distribucion.dormido, distribucion.tranquilo, distribucion.activo, distribucion.llorando];
 
@@ -922,23 +977,31 @@ function GraficoDonut({ distribucion }: { distribucion: { dormido: number; tranq
 
   return (
     <View style={e.envolturioDonut}>
-      <Svg width={tam} height={tam}>
-        <Circle cx={cx} cy={cy} r={radio} fill="none" stroke={Colores.borde} strokeWidth={grosor} />
-        {segmentos.map((seg, i) => (
-          <Circle
-            key={i}
-            cx={cx} cy={cy} r={radio}
-            fill="none"
-            stroke={seg.color}
-            strokeWidth={grosor}
-            strokeDasharray={`${seg.longitud} ${circ - seg.longitud}`}
-            strokeDashoffset={-seg.offset}
-            strokeLinecap="butt"
-            rotation={-90}
-            origin={`${cx},${cy}`}
-          />
-        ))}
-      </Svg>
+      <Animated.View style={{
+        transform: [
+          { scale: animDonut },
+          { rotate: animDonut.interpolate({ inputRange: [0, 1], outputRange: ['-90deg', '0deg'] }) },
+        ],
+        opacity: animDonut,
+      }}>
+        <Svg width={tam} height={tam}>
+          <Circle cx={cx} cy={cy} r={radio} fill="none" stroke={Colores.borde} strokeWidth={grosor} />
+          {segmentos.map((seg, i) => (
+            <Circle
+              key={i}
+              cx={cx} cy={cy} r={radio}
+              fill="none"
+              stroke={seg.color}
+              strokeWidth={grosor}
+              strokeDasharray={`${seg.longitud} ${circ - seg.longitud}`}
+              strokeDashoffset={-seg.offset}
+              strokeLinecap="butt"
+              rotation={-90}
+              origin={`${cx},${cy}`}
+            />
+          ))}
+        </Svg>
+      </Animated.View>
       <View style={e.centroDonut}>
         <Text style={e.emojiCentroDonut}>👶</Text>
       </View>
@@ -1359,4 +1422,9 @@ const e = StyleSheet.create({
     marginTop: 4,
   },
   textoVerMas: { fontSize: 12, fontWeight: '700', color: Colores.primario },
+
+  // Barra resumen
+  barraResumen: { flexDirection: 'row', paddingHorizontal: 24, gap: 8, marginBottom: 16 },
+  chipResumen: { flex: 1, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 14, alignItems: 'center' },
+  chipResumenTexto: { fontSize: 11, fontWeight: '700' },
 });

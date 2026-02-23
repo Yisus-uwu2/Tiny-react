@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import Svg, { Polyline } from 'react-native-svg';
+import Svg, { Polyline, Polygon, Defs, LinearGradient as SvgLinearGradient, Stop, Circle as SvgCircle } from 'react-native-svg';
 import { useDatosSensor } from '../hooks/useDatosSensor';
 import { Colores } from '../constantes/colores';
 
@@ -50,6 +50,7 @@ const TRACKERS_INICIAL: Tracker[] = [
 ];
 
 const DURACIONES_SUENO = [30, 45, 60, 90, 120]; // minutos
+const METAS_TRACKER: Record<string, number> = { biberon: 8, panal: 10, sueno: 5 };
 
 function formatContador(desde: Date | null): string {
   if (!desde) return '0:00';
@@ -168,6 +169,10 @@ export default function PantallaInicio({ navigation }: any) {
   // Animación del toast de confirmación
   const animToast = useRef(new Animated.Value(0)).current;
 
+  // Scroll para header colapsable
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const opacidadSaludo = scrollY.interpolate({ inputRange: [0, 50], outputRange: [1, 0], extrapolate: 'clamp' });
+
   const mostrarConfirmacion = useCallback((texto: string) => {
     setConfirmacion(texto);
     animToast.setValue(0);
@@ -211,7 +216,7 @@ export default function PantallaInicio({ navigation }: any) {
 
   const ahora = new Date();
   const hora = ahora.getHours();
-  const saludo = hora < 12 ? '¡Buenos días!' : hora < 18 ? '¡Buenas tardes!' : '¡Buenas noches!';
+  const saludo = hora < 12 ? '🌅 ¡Buenos días!' : hora < 18 ? '☀️ ¡Buenas tardes!' : '🌙 ¡Buenas noches!';
 
   const actividad = configActividad[datos.actividad] ?? configActividad.tranquilo;
   const estado    = configEstado[datos.estado]        ?? configEstado.normal;
@@ -231,10 +236,12 @@ export default function PantallaInicio({ navigation }: any) {
 
   return (
     <View style={{ flex: 1, backgroundColor: Colores.fondo }}>
-      <ScrollView
+      <Animated.ScrollView
         style={s.contenedor}
         contentContainerStyle={s.contenido}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
         refreshControl={
           <RefreshControl refreshing={refrescando} onRefresh={alRefrescar} tintColor={Colores.primario} colors={[Colores.primario]} />
         }
@@ -243,7 +250,7 @@ export default function PantallaInicio({ navigation }: any) {
         {/* ── HEADER LIMPIO ── */}
         <Animated.View style={[s.header, entrada(0)]}>
           <View>
-            <Text style={s.saludo}>{saludo}</Text>
+            <Animated.Text style={[s.saludo, { opacity: opacidadSaludo }]}>{saludo}</Animated.Text>
             <Text style={s.titulo}>TinyCare</Text>
           </View>
           <View style={[s.chip, { backgroundColor: datos.conectado ? Colores.seguro + '22' : Colores.peligro + '22' }]}>
@@ -321,7 +328,7 @@ export default function PantallaInicio({ navigation }: any) {
                 </Text>
               </View>
             </View>
-            <Text style={[s.valor, { color: Colores.corazonOscuro }]}>{datos.ritmoCardiaco}</Text>
+            <ValorAnimado valor={datos.ritmoCardiaco} estilo={[s.valor, { color: Colores.corazonOscuro }]} />
             <Text style={[s.unidad, { color: Colores.corazonOscuro }]}>lpm</Text>
             <Text style={s.etiquetaTarjeta}>Ritmo cardíaco</Text>
             <Sparkline datos={datosRC} color={Colores.corazon} ancho={120} alto={28} />
@@ -340,7 +347,7 @@ export default function PantallaInicio({ navigation }: any) {
                 </Text>
               </View>
             </View>
-            <Text style={[s.valor, { color: Colores.oxigenoOscuro }]}>{datos.oxigeno}</Text>
+            <ValorAnimado valor={datos.oxigeno} estilo={[s.valor, { color: Colores.oxigenoOscuro }]} />
             <Text style={[s.unidad, { color: Colores.oxigenoOscuro }]}>%</Text>
             <Text style={s.etiquetaTarjeta}>Oxigenación</Text>
             <Sparkline datos={datosO2} color={Colores.oxigeno} ancho={120} alto={28} />
@@ -366,7 +373,7 @@ export default function PantallaInicio({ navigation }: any) {
                 </View>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
-                <Text style={[s.valor, s.valorAncho, { color: Colores.temperaturaOscuro }]}>{datos.temperatura}</Text>
+                <ValorAnimado valor={datos.temperatura} decimales={1} estilo={[s.valor, s.valorAncho, { color: Colores.temperaturaOscuro }]} />
                 <Text style={[s.unidad, { color: Colores.temperaturaOscuro, marginBottom: 4 }]}>°C</Text>
               </View>
             </View>
@@ -393,7 +400,16 @@ export default function PantallaInicio({ navigation }: any) {
                 onPress={() => abrirMenu(t.id)}
               >
                 <LinearGradient colors={t.gradiente} style={s.trackerGradiente} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                  <Text style={s.trackerEmoji}>{t.emoji}</Text>
+                  <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center' }}>
+                    <Svg width={52} height={52} style={{ position: 'absolute' }}>
+                      <SvgCircle cx={26} cy={26} r={22} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth={3} />
+                      <SvgCircle cx={26} cy={26} r={22} fill="none" stroke="#FFF" strokeWidth={3}
+                        strokeDasharray={`${2 * Math.PI * 22}`}
+                        strokeDashoffset={2 * Math.PI * 22 * (1 - Math.min(1, t.registros.length / (METAS_TRACKER[t.id] || 8)))}
+                        strokeLinecap="round" rotation={-90} origin="26,26" />
+                    </Svg>
+                    <Text style={s.trackerEmoji}>{t.emoji}</Text>
+                  </View>
 
                   {/* Contador principal */}
                   {esSueno && t.activo ? (
@@ -420,7 +436,7 @@ export default function PantallaInicio({ navigation }: any) {
         </Animated.View>
 
         <View style={{ height: 36 }} />
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* ── MENÚ FLOTANTE ANIMADO ── */}
       <Modal visible={menuVisible} transparent animationType="none" onRequestClose={cerrarMenu} statusBarTranslucent>
@@ -623,16 +639,41 @@ function TarjetaSensorAnimada({ onPress, style, children }: { onPress: () => voi
   );
 }
 
-/** Sparkline SVG compacto (inline) */
+/** Valor numérico con animación count-up */
+function ValorAnimado({ valor, decimales = 0, estilo }: { valor: number; decimales?: number; estilo?: any }) {
+  const [display, setDisplay] = useState(valor);
+  const anim = useRef(new Animated.Value(valor)).current;
+  useEffect(() => {
+    const listener = anim.addListener(({ value: v }) => {
+      setDisplay(decimales > 0 ? parseFloat(v.toFixed(decimales)) : Math.round(v));
+    });
+    return () => anim.removeListener(listener);
+  }, [decimales]);
+  useEffect(() => {
+    Animated.timing(anim, { toValue: valor, duration: 400, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+  }, [valor]);
+  return <Text style={estilo}>{decimales > 0 ? display.toFixed(decimales) : display}</Text>;
+}
+
+/** Sparkline SVG con relleno degradado */
 function Sparkline({ datos, color, ancho, alto }: { datos: number[]; color: string; ancho: number; alto: number }) {
   if (datos.length < 2) return null;
   const min = Math.min(...datos);
   const max = Math.max(...datos);
   const rango = max - min || 1;
   const puntos = datos.map((v, i) => `${(i / (datos.length - 1)) * ancho},${alto - ((v - min) / rango) * (alto - 4) - 2}`).join(' ');
+  const areaPoints = `0,${alto} ${puntos} ${ancho},${alto}`;
+  const gradId = `spk_${color.replace('#', '')}`;
   return (
-    <View style={{ marginTop: 8, alignSelf: 'flex-start', opacity: 0.7 }}>
+    <View style={{ marginTop: 8, alignSelf: 'flex-start' }}>
       <Svg width={ancho} height={alto}>
+        <Defs>
+          <SvgLinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor={color} stopOpacity={0.3} />
+            <Stop offset="1" stopColor={color} stopOpacity={0.02} />
+          </SvgLinearGradient>
+        </Defs>
+        <Polygon points={areaPoints} fill={`url(#${gradId})`} />
         <Polyline points={puntos} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
       </Svg>
     </View>
