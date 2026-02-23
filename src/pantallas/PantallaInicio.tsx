@@ -5,11 +5,13 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Animated, Easing,
-  TouchableOpacity, Platform, Modal, Pressable, Vibration,
+  TouchableOpacity, Platform, Modal, Pressable, Vibration, RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import Svg, { Polyline } from 'react-native-svg';
 import { useDatosSensor } from '../hooks/useDatosSensor';
+import { Colores } from '../constantes/colores';
 
 // ── Config ──────────────────────────────────────────────────────
 
@@ -81,12 +83,18 @@ function formatCountdown(inicioSueno: Date, alarmaMin: number): string {
 // ── Componente principal ────────────────────────────────────────
 
 export default function PantallaInicio({ navigation }: any) {
-  const { datos } = useDatosSensor();
+  const { datos, historial } = useDatosSensor();
   const [trackers, setTrackers] = useState(TRACKERS_INICIAL);
   const [menuAbierto, setMenuAbierto] = useState<string | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
   const [confirmacion, setConfirmacion] = useState<string | null>(null);
   const [, tick] = useState(0);
+
+  const [refrescando, setRefrescando] = useState(false);
+  const alRefrescar = useCallback(() => {
+    setRefrescando(true);
+    setTimeout(() => setRefrescando(false), 1200);
+  }, []);
 
   // Animaciones
   const anims = [0, 1, 2, 3, 4].map(() => useRef(new Animated.Value(0)).current);
@@ -216,9 +224,21 @@ export default function PantallaInicio({ navigation }: any) {
   const trackerSueno = trackers.find(t => t.id === 'sueno')!;
   const ultimoSueno = trackerSueno.registros.length > 0 ? trackerSueno.registros[trackerSueno.registros.length - 1] : null;
 
+  // Datos para sparklines
+  const datosRC = historial.slice(-8).map(h => h.ritmoCardiaco);
+  const datosO2 = historial.slice(-8).map(h => h.oxigeno);
+  const datosTemp = historial.slice(-8).map(h => h.temperatura);
+
   return (
-    <View style={{ flex: 1, backgroundColor: '#F8F7FC' }}>
-      <ScrollView style={s.contenedor} contentContainerStyle={s.contenido} showsVerticalScrollIndicator={false}>
+    <View style={{ flex: 1, backgroundColor: Colores.fondo }}>
+      <ScrollView
+        style={s.contenedor}
+        contentContainerStyle={s.contenido}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refrescando} onRefresh={alRefrescar} tintColor={Colores.primario} colors={[Colores.primario]} />
+        }
+      >
 
         {/* ── HEADER LIMPIO ── */}
         <Animated.View style={[s.header, entrada(0)]}>
@@ -226,9 +246,9 @@ export default function PantallaInicio({ navigation }: any) {
             <Text style={s.saludo}>{saludo}</Text>
             <Text style={s.titulo}>TinyCare</Text>
           </View>
-          <View style={[s.chip, { backgroundColor: datos.conectado ? '#DCFCE7' : '#FEE2E2' }]}>
-            <View style={[s.puntoConexion, { backgroundColor: datos.conectado ? '#22C55E' : '#EF4444' }]} />
-            <Text style={[s.textoChip, { color: datos.conectado ? '#16A34A' : '#DC2626' }]}>
+          <View style={[s.chip, { backgroundColor: datos.conectado ? Colores.seguro + '22' : Colores.peligro + '22' }]}>
+            <View style={[s.puntoConexion, { backgroundColor: datos.conectado ? Colores.seguroOscuro : Colores.peligroOscuro }]} />
+            <Text style={[s.textoChip, { color: datos.conectado ? Colores.seguroOscuro : Colores.peligroOscuro }]}>
               {datos.conectado ? 'Conectado' : 'Sin señal'}
             </Text>
           </View>
@@ -280,7 +300,7 @@ export default function PantallaInicio({ navigation }: any) {
 
         <Animated.View style={[s.fila, entrada(2)]}>
           {/* Ritmo cardíaco */}
-          <TouchableOpacity style={[s.tarjetaSensor, { flex: 1 }]} activeOpacity={0.7} onPress={() => irAVitales('corazon')}>
+          <TarjetaSensorAnimada onPress={() => irAVitales('corazon')} style={{ flex: 1 }}>
             <View style={s.superiorTarjeta}>
               <View style={s.envolturioAnillos}>
                 <Animated.View style={[s.anillo, {
@@ -291,7 +311,7 @@ export default function PantallaInicio({ navigation }: any) {
                   transform: [{ scale: anillo2.interpolate({ inputRange: [0, 1], outputRange: [1, 2.4] }) }],
                   opacity: anillo2.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.5, 0.2, 0] }),
                 }]} />
-                <LinearGradient colors={['#FF6B8A', '#FF4775']} style={s.fondoIcono} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                <LinearGradient colors={Colores.gradienteCorazon as [string, string]} style={s.fondoIcono} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
                   <Text style={s.iconoTarjeta}>❤️</Text>
                 </LinearGradient>
               </View>
@@ -301,16 +321,17 @@ export default function PantallaInicio({ navigation }: any) {
                 </Text>
               </View>
             </View>
-            <Text style={[s.valor, { color: '#FF4775' }]}>{datos.ritmoCardiaco}</Text>
-            <Text style={[s.unidad, { color: '#FF4775' }]}>lpm</Text>
+            <Text style={[s.valor, { color: Colores.corazonOscuro }]}>{datos.ritmoCardiaco}</Text>
+            <Text style={[s.unidad, { color: Colores.corazonOscuro }]}>lpm</Text>
             <Text style={s.etiquetaTarjeta}>Ritmo cardíaco</Text>
-            <BarraSensor valor={datos.ritmoCardiaco} min={100} max={160} color="#FF6B8A" />
-          </TouchableOpacity>
+            <Sparkline datos={datosRC} color={Colores.corazon} ancho={120} alto={28} />
+            <BarraSensor valor={datos.ritmoCardiaco} min={100} max={160} color={Colores.corazon} />
+          </TarjetaSensorAnimada>
           <View style={{ width: 12 }} />
           {/* Oxigenación */}
-          <TouchableOpacity style={[s.tarjetaSensor, { flex: 1 }]} activeOpacity={0.7} onPress={() => irAVitales('oxigeno')}>
+          <TarjetaSensorAnimada onPress={() => irAVitales('oxigeno')} style={{ flex: 1 }}>
             <View style={s.superiorTarjeta}>
-              <LinearGradient colors={['#38BDF8', '#0EA5E9']} style={s.fondoIcono} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+              <LinearGradient colors={Colores.gradienteOxigeno as [string, string]} style={s.fondoIcono} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
                 <Text style={s.iconoTarjeta}>💧</Text>
               </LinearGradient>
               <View style={[s.badge, estaEnRango(datos.oxigeno, 95, 100) ? s.badgeVerde : s.badgeRoja]}>
@@ -319,19 +340,20 @@ export default function PantallaInicio({ navigation }: any) {
                 </Text>
               </View>
             </View>
-            <Text style={[s.valor, { color: '#0EA5E9' }]}>{datos.oxigeno}</Text>
-            <Text style={[s.unidad, { color: '#0EA5E9' }]}>%</Text>
+            <Text style={[s.valor, { color: Colores.oxigenoOscuro }]}>{datos.oxigeno}</Text>
+            <Text style={[s.unidad, { color: Colores.oxigenoOscuro }]}>%</Text>
             <Text style={s.etiquetaTarjeta}>Oxigenación</Text>
-            <BarraSensor valor={datos.oxigeno} min={95} max={100} color="#38BDF8" />
-          </TouchableOpacity>
+            <Sparkline datos={datosO2} color={Colores.oxigeno} ancho={120} alto={28} />
+            <BarraSensor valor={datos.oxigeno} min={95} max={100} color={Colores.oxigeno} />
+          </TarjetaSensorAnimada>
         </Animated.View>
 
         {/* Temperatura */}
         <Animated.View style={entrada(2)}>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => irAVitales('temp')} style={s.tarjetaAncha}>
+          <TarjetaSensorAnimada onPress={() => irAVitales('temp')} style={s.tarjetaAnchaExterna}>
             <View style={s.superiorAncha}>
               <View style={s.izquierdaAncha}>
-                <LinearGradient colors={['#FB923C', '#EA580C']} style={s.fondoIcono} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                <LinearGradient colors={Colores.gradienteTemperatura as [string, string]} style={s.fondoIcono} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
                   <Text style={s.iconoTarjeta}>🌡️</Text>
                 </LinearGradient>
                 <View style={{ marginLeft: 14 }}>
@@ -344,12 +366,13 @@ export default function PantallaInicio({ navigation }: any) {
                 </View>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
-                <Text style={[s.valor, s.valorAncho, { color: '#EA580C' }]}>{datos.temperatura}</Text>
-                <Text style={[s.unidad, { color: '#EA580C', marginBottom: 4 }]}>°C</Text>
+                <Text style={[s.valor, s.valorAncho, { color: Colores.temperaturaOscuro }]}>{datos.temperatura}</Text>
+                <Text style={[s.unidad, { color: Colores.temperaturaOscuro, marginBottom: 4 }]}>°C</Text>
               </View>
             </View>
-            <BarraSensor valor={datos.temperatura} min={36.5} max={37.5} color="#FB923C" />
-          </TouchableOpacity>
+            <Sparkline datos={datosTemp} color={Colores.temperatura} ancho={200} alto={28} />
+            <BarraSensor valor={datos.temperatura} min={36.5} max={37.5} color={Colores.temperatura} />
+          </TarjetaSensorAnimada>
         </Animated.View>
 
         {/* ── SEGUIMIENTO ── */}
@@ -584,6 +607,38 @@ export default function PantallaInicio({ navigation }: any) {
   );
 }
 
+// ── Componentes auxiliares ───────────────────────────────────────
+
+/** Tarjeta con micro-animación de escala al presionar */
+function TarjetaSensorAnimada({ onPress, style, children }: { onPress: () => void; style?: any; children: React.ReactNode }) {
+  const escala = useRef(new Animated.Value(1)).current;
+  const onPressIn = () => Animated.spring(escala, { toValue: 0.96, useNativeDriver: true, tension: 120, friction: 8 }).start();
+  const onPressOut = () => Animated.spring(escala, { toValue: 1, useNativeDriver: true, tension: 40, friction: 6 }).start();
+  return (
+    <TouchableOpacity activeOpacity={1} onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut} style={style}>
+      <Animated.View style={[s.tarjetaSensor, { transform: [{ scale: escala }] }]}>
+        {children}
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
+
+/** Sparkline SVG compacto (inline) */
+function Sparkline({ datos, color, ancho, alto }: { datos: number[]; color: string; ancho: number; alto: number }) {
+  if (datos.length < 2) return null;
+  const min = Math.min(...datos);
+  const max = Math.max(...datos);
+  const rango = max - min || 1;
+  const puntos = datos.map((v, i) => `${(i / (datos.length - 1)) * ancho},${alto - ((v - min) / rango) * (alto - 4) - 2}`).join(' ');
+  return (
+    <View style={{ marginTop: 8, alignSelf: 'flex-start', opacity: 0.7 }}>
+      <Svg width={ancho} height={alto}>
+        <Polyline points={puntos} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    </View>
+  );
+}
+
 // ── Utilidades ──────────────────────────────────────────────────
 
 const estaEnRango = (v: number, min: number, max: number) => v >= min && v <= max;
@@ -609,7 +664,7 @@ function BarraSensor({ valor, min, max, color }: { valor: number; min: number; m
 // ── Estilos ──────────────────────────────────────────────────────
 
 const barra = StyleSheet.create({
-  pista: { height: 4, backgroundColor: '#F1F0F8', borderRadius: 2, position: 'relative', overflow: 'visible' },
+  pista: { height: 4, backgroundColor: Colores.bordeSutil, borderRadius: 2, position: 'relative', overflow: 'visible' },
   zona:  { position: 'absolute', top: 0, bottom: 0, borderRadius: 2 },
   punto: { position: 'absolute', top: -4, width: 12, height: 12, borderRadius: 6, marginLeft: -6, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.18, shadowRadius: 3, elevation: 3 },
 });
@@ -623,8 +678,8 @@ const s = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingTop: Platform.OS === 'ios' ? 60 : 46, paddingBottom: 16, paddingHorizontal: 20,
   },
-  saludo: { fontSize: 13, color: '#9B95B0', fontWeight: '500' },
-  titulo: { fontSize: 28, fontWeight: '900', color: '#1A1A2E', letterSpacing: -0.5 },
+  saludo: { fontSize: 13, color: Colores.textoClaro, fontWeight: '500' },
+  titulo: { fontSize: 28, fontWeight: '900', color: Colores.textoOscuro, letterSpacing: -0.5 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   puntoConexion: { width: 7, height: 7, borderRadius: 4 },
   textoChip: { fontSize: 12, fontWeight: '700' },
@@ -638,25 +693,25 @@ const s = StyleSheet.create({
   circuloAvatar: { width: 68, height: 68, borderRadius: 34, backgroundColor: '#FEF3C7', borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
   emojiBebe: { fontSize: 36 },
   infoBebe: { marginLeft: 16, flex: 1, gap: 3 },
-  nombreBebe: { fontSize: 24, fontWeight: '900', color: '#1A1A2E', letterSpacing: -0.5 },
-  edadBebe: { fontSize: 13, color: '#6B6B8A', fontWeight: '500' },
+  nombreBebe: { fontSize: 24, fontWeight: '900', color: Colores.textoOscuro, letterSpacing: -0.5 },
+  edadBebe: { fontSize: 13, color: Colores.textoMedio, fontWeight: '500' },
   bloqueActividad: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     paddingVertical: 16, paddingHorizontal: 18, borderRadius: 20,
   },
   actividadEmoji: { fontSize: 38 },
   actividadTitulo: { fontSize: 22, fontWeight: '900', letterSpacing: -0.3 },
-  actividadDesc: { fontSize: 13, color: '#6B6B8A', fontWeight: '500', marginTop: 2 },
+  actividadDesc: { fontSize: 13, color: Colores.textoMedio, fontWeight: '500', marginTop: 2 },
 
   cajaEstado: { flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 18, padding: 16, borderWidth: 1.5, marginTop: 16 },
   fondoIconoEstado: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   iconoEstado: { color: '#FFFFFF', fontSize: 22, fontWeight: '900' },
   etiquetaEstado: { fontSize: 18, fontWeight: '800' },
-  descEstado: { fontSize: 12, color: '#6B6B8A', marginTop: 2, fontWeight: '500' },
+  descEstado: { fontSize: 12, color: Colores.textoMedio, marginTop: 2, fontWeight: '500' },
 
   // Sección
   encabezadoSeccion: { paddingHorizontal: 20, marginTop: 26, marginBottom: 12 },
-  tituloSeccion: { fontSize: 18, fontWeight: '800', color: '#1A1A2E' },
+  tituloSeccion: { fontSize: 18, fontWeight: '800', color: Colores.textoOscuro },
 
   // Vitales
   fila: { flexDirection: 'row', paddingHorizontal: 16 },
@@ -669,19 +724,22 @@ const s = StyleSheet.create({
   iconoTarjeta: { fontSize: 22 },
   valor: { fontSize: 42, fontWeight: '900', letterSpacing: -1.5, lineHeight: 46 },
   unidad: { fontSize: 14, fontWeight: '600', opacity: 0.8 },
-  etiquetaTarjeta: { fontSize: 12, color: '#6B6B8A', fontWeight: '600', marginTop: 3 },
+  etiquetaTarjeta: { fontSize: 12, color: Colores.textoMedio, fontWeight: '600', marginTop: 3 },
   badge: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10 },
-  badgeVerde: { backgroundColor: '#DCFCE7' },
-  badgeRoja: { backgroundColor: '#FEE2E2' },
+  badgeVerde: { backgroundColor: Colores.seguro + '22' },
+  badgeRoja: { backgroundColor: Colores.peligro + '22' },
   badgeTexto: { fontSize: 11, fontWeight: '700' },
-  badgeTextoVerde: { color: '#16A34A' },
-  badgeTextoRoja: { color: '#DC2626' },
+  badgeTextoVerde: { color: Colores.seguroOscuro },
+  badgeTextoRoja: { color: Colores.peligroOscuro },
   envolturioAnillos: { position: 'relative', width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  anillo: { position: 'absolute', width: 44, height: 44, borderRadius: 22, backgroundColor: '#FF6B8A22' },
+  anillo: { position: 'absolute', width: 44, height: 44, borderRadius: 22, backgroundColor: Colores.corazon + '22' },
   tarjetaAncha: {
-    marginHorizontal: 16, marginTop: 12, backgroundColor: '#FFFFFF', borderRadius: 22, padding: 18,
+    marginHorizontal: 16, marginTop: 12, backgroundColor: Colores.fondoTarjeta, borderRadius: 22, padding: 18,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 12, elevation: 3,
     overflow: 'hidden',
+  },
+  tarjetaAnchaExterna: {
+    marginHorizontal: 16, marginTop: 12,
   },
   superiorAncha: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   izquierdaAncha: { flexDirection: 'row', alignItems: 'center', flex: 1 },
@@ -707,45 +765,45 @@ const s = StyleSheet.create({
   },
   menuHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 4 },
   menuIcono: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  menuTitulo: { fontSize: 20, fontWeight: '900', color: '#1A1A2E' },
-  menuSubtitulo: { fontSize: 13, color: '#9B95B0', fontWeight: '500', marginTop: 2 },
-  menuDivisor: { height: 1, backgroundColor: '#F1F0F8', marginVertical: 16 },
+  menuTitulo: { fontSize: 20, fontWeight: '900', color: Colores.textoOscuro },
+  menuSubtitulo: { fontSize: 13, color: Colores.textoClaro, fontWeight: '500', marginTop: 2 },
+  menuDivisor: { height: 1, backgroundColor: Colores.bordeSutil, marginVertical: 16 },
 
   menuAccion: {
     flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, borderRadius: 18, marginBottom: 10,
   },
   menuAccionEmoji: { fontSize: 22 },
-  menuAccionTitulo: { fontSize: 16, fontWeight: '700', color: '#1A1A2E' },
-  menuAccionDesc: { fontSize: 12, color: '#9B95B0', marginTop: 1 },
+  menuAccionTitulo: { fontSize: 16, fontWeight: '700', color: Colores.textoOscuro },
+  menuAccionDesc: { fontSize: 12, color: Colores.textoClaro, marginTop: 1 },
 
   menuSeccion: { marginTop: 6, marginBottom: 10 },
-  menuSeccionTitulo: { fontSize: 14, fontWeight: '700', color: '#1A1A2E', marginBottom: 4 },
-  menuSeccionDesc: { fontSize: 12, color: '#9B95B0', marginBottom: 10 },
+  menuSeccionTitulo: { fontSize: 14, fontWeight: '700', color: Colores.textoOscuro, marginBottom: 4 },
+  menuSeccionDesc: { fontSize: 12, color: Colores.textoClaro, marginBottom: 10 },
 
-  menuStats: { flexDirection: 'row', backgroundColor: '#F8F7FC', borderRadius: 16, padding: 14 },
+  menuStats: { flexDirection: 'row', backgroundColor: Colores.fondoSecundario, borderRadius: 16, padding: 14 },
   menuStat: { flex: 1, alignItems: 'center' },
   menuStatValor: { fontSize: 20, fontWeight: '900' },
-  menuStatLabel: { fontSize: 11, color: '#9B95B0', fontWeight: '600', marginTop: 2 },
-  menuStatDivisor: { width: 1, backgroundColor: '#E5E4EE', marginHorizontal: 6 },
+  menuStatLabel: { fontSize: 11, color: Colores.textoClaro, fontWeight: '600', marginTop: 2 },
+  menuStatDivisor: { width: 1, backgroundColor: Colores.bordeSutil, marginHorizontal: 6 },
 
   menuHistItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
   menuHistDot: { width: 8, height: 8, borderRadius: 4 },
-  menuHistTexto: { fontSize: 15, fontWeight: '700', color: '#1A1A2E' },
-  menuHistTiempo: { fontSize: 12, color: '#9B95B0', fontWeight: '500' },
+  menuHistTexto: { fontSize: 15, fontWeight: '700', color: Colores.textoOscuro },
+  menuHistTiempo: { fontSize: 12, color: Colores.textoClaro, fontWeight: '500' },
 
   filaDuraciones: { flexDirection: 'row', gap: 8 },
-  botonDuracion: { flex: 1, backgroundColor: '#F1F0F8', paddingVertical: 10, borderRadius: 14, alignItems: 'center' },
-  textoDuracion: { fontSize: 14, fontWeight: '700', color: '#6B6B8A' },
+  botonDuracion: { flex: 1, backgroundColor: Colores.bordeSutil, paddingVertical: 10, borderRadius: 14, alignItems: 'center' },
+  textoDuracion: { fontSize: 14, fontWeight: '700', color: Colores.textoMedio },
 
   menuEstadoActivo: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 18, marginTop: 10 },
   menuEstadoEmoji: { fontSize: 28 },
   menuEstadoTitulo: { fontSize: 15, fontWeight: '800' },
-  menuEstadoTiempo: { fontSize: 22, fontWeight: '900', color: '#1A1A2E' },
+  menuEstadoTiempo: { fontSize: 22, fontWeight: '900', color: Colores.textoOscuro },
   menuCountdown: { backgroundColor: 'rgba(0,0,0,0.06)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
   menuCountdownTexto: { fontSize: 14, fontWeight: '800' },
 
   menuCerrar: { marginTop: 10, alignItems: 'center', paddingVertical: 14 },
-  menuCerrarTexto: { fontSize: 16, fontWeight: '700', color: '#9B95B0' },
+  menuCerrarTexto: { fontSize: 16, fontWeight: '700', color: Colores.textoClaro },
 
   toastOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -758,9 +816,9 @@ const s = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.2, shadowRadius: 30, elevation: 20,
   },
   toastCheck: {
-    width: 64, height: 64, borderRadius: 32, backgroundColor: '#22C55E',
+    width: 64, height: 64, borderRadius: 32, backgroundColor: Colores.seguro,
     alignItems: 'center', justifyContent: 'center',
   },
   toastCheckTexto: { fontSize: 34, fontWeight: '900', color: '#FFFFFF' },
-  toastTexto: { fontSize: 17, fontWeight: '800', color: '#1A1A2E', textAlign: 'center' },
+  toastTexto: { fontSize: 17, fontWeight: '800', color: Colores.textoOscuro, textAlign: 'center' },
 });

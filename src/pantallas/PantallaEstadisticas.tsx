@@ -6,11 +6,13 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity,
-  Animated, LayoutAnimation, Platform, UIManager,
+  Animated, LayoutAnimation, Platform, UIManager, Easing, RefreshControl,
 } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { useDatosSensor } from '../hooks/useDatosSensor';
 import { Colores } from '../constantes/colores';
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 // Habilitar LayoutAnimation en Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -415,8 +417,21 @@ export default function PantallaEstadisticas() {
     },
   ];
 
+  const [refrescando, setRefrescando] = useState(false);
+  const alRefrescar = useCallback(() => {
+    setRefrescando(true);
+    setTimeout(() => setRefrescando(false), 1200);
+  }, []);
+
   return (
-    <ScrollView style={e.contenedor} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 36 }}>
+    <ScrollView
+      style={e.contenedor}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ paddingBottom: 36 }}
+      refreshControl={
+        <RefreshControl refreshing={refrescando} onRefresh={alRefrescar} tintColor={Colores.primario} colors={[Colores.primario]} />
+      }
+    >
 
       {/* ── ENCABEZADO ── */}
       <View style={e.zonaEncabezado}>
@@ -749,26 +764,42 @@ function CirculoPuntaje({ puntaje, color }: { puntaje: number; color: string }) 
   const cy = tam / 2;
   const circ = 2 * Math.PI * radio;
   const lleno = (puntaje / 100) * circ;
+  const offset = circ - lleno;
+
+  // Animación de llenado: strokeDashoffset va de circ → offset
+  const animOffset = useRef(new Animated.Value(circ)).current;
+  useEffect(() => {
+    animOffset.setValue(circ);
+    Animated.timing(animOffset, { toValue: offset, duration: 1200, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+  }, [puntaje]);
+
+  // Animación del número
+  const opNum = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    opNum.setValue(0);
+    Animated.timing(opNum, { toValue: 1, duration: 600, delay: 400, useNativeDriver: true }).start();
+  }, [puntaje]);
 
   return (
     <View style={e.envolturioCirculo}>
       <Svg width={tam} height={tam}>
         <Circle cx={cx} cy={cy} r={radio} fill="none" stroke={Colores.borde} strokeWidth={9} />
-        <Circle
+        <AnimatedCircle
           cx={cx} cy={cy} r={radio}
           fill="none"
           stroke={color}
           strokeWidth={9}
-          strokeDasharray={`${lleno} ${circ}`}
+          strokeDasharray={`${circ}`}
+          strokeDashoffset={animOffset}
           strokeLinecap="round"
           rotation={-90}
           origin={`${cx},${cy}`}
         />
       </Svg>
-      <View style={e.centroCirculo}>
+      <Animated.View style={[e.centroCirculo, { opacity: opNum }]}>
         <Text style={[e.numeroPuntaje, { color }]}>{puntaje}</Text>
         <Text style={[e.etiquetaPuntajeCirculo, { color: color + 'AA' }]}>/100</Text>
-      </View>
+      </Animated.View>
     </View>
   );
 }

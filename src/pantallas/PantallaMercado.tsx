@@ -819,8 +819,12 @@ function TarjetaProducto({
   alAgregar: () => void;
   alCambiarCantidad: (delta: number) => void;
 }) {
+  const escala = useRef(new Animated.Value(1)).current;
+  const onIn = () => Animated.spring(escala, { toValue: 0.96, useNativeDriver: true, tension: 120, friction: 8 }).start();
+  const onOut = () => Animated.spring(escala, { toValue: 1, useNativeDriver: true, tension: 40, friction: 6 }).start();
   return (
-    <TouchableOpacity style={s.tarjetaProducto} onPress={alPresionar} activeOpacity={0.85}>
+    <TouchableOpacity activeOpacity={1} onPress={alPresionar} onPressIn={onIn} onPressOut={onOut}>
+      <Animated.View style={[s.tarjetaProducto, { transform: [{ scale: escala }] }]}>
       <View style={[s.emojiProductoContainer, { backgroundColor: producto.colorAccent + '10' }]}>
         <Text style={s.emojiProductoTexto}>{producto.emoji}</Text>
         {producto.envioGratis && (
@@ -856,6 +860,7 @@ function TarjetaProducto({
           <Text style={s.textoBotonTarjeta}>Agregar</Text>
         </TouchableOpacity>
       )}
+      </Animated.View>
     </TouchableOpacity>
   );
 }
@@ -871,18 +876,18 @@ const s = StyleSheet.create({
   zonaEncabezado: { backgroundColor: Colores.fondo, paddingHorizontal: 20 },
   espacioSuperior: { height: Platform.OS === 'ios' ? 60 : 46 },
   filaEncabezado: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  tituloEncabezado: { fontSize: 26, fontWeight: '900', color: '#1A1A2E', letterSpacing: -0.5 },
-  subtituloEncabezado: { fontSize: 13, color: '#9B95B0', fontWeight: '500', marginTop: 2 },
+  tituloEncabezado: { fontSize: 26, fontWeight: '900', color: Colores.textoOscuro, letterSpacing: -0.5 },
+  subtituloEncabezado: { fontSize: 13, color: Colores.textoClaro, fontWeight: '500', marginTop: 2 },
   iconoCarrito: {
     width: 52, height: 52, borderRadius: 26,
-    backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colores.fondoTarjeta, alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 4,
   },
   textoCarritoIcono: { fontSize: 24 },
   badgeCarrito: {
     position: 'absolute', top: -4, right: -4,
     minWidth: 22, height: 22, borderRadius: 11,
-    backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colores.peligro, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 5,
   },
   textoBadgeCarrito: { color: '#FFF', fontSize: 12, fontWeight: '800' },
@@ -890,26 +895,26 @@ const s = StyleSheet.create({
   // Buscador
   contenedorBuscador: { paddingHorizontal: 20, marginTop: 14 },
   campoBuscador: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF',
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colores.fondoTarjeta,
     borderRadius: 16, paddingHorizontal: 16, height: 48,
-    borderWidth: 1.5, borderColor: '#F1F0F8',
+    borderWidth: 1.5, borderColor: Colores.bordeSutil,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
   },
   iconoBuscar: { fontSize: 16, marginRight: 10 },
-  inputBuscar: { flex: 1, fontSize: 14, fontWeight: '500', color: '#1A1A2E', padding: 0 },
-  botonLimpiar: { fontSize: 14, color: '#9B95B0', fontWeight: '700', paddingLeft: 10 },
+  inputBuscar: { flex: 1, fontSize: 14, fontWeight: '500', color: Colores.textoOscuro, padding: 0 },
+  botonLimpiar: { fontSize: 14, color: Colores.textoClaro, fontWeight: '700', paddingLeft: 10 },
 
   // Filtros
   contenedorFiltros: { paddingHorizontal: 20, paddingVertical: 12, gap: 8 },
   chipFiltro: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20,
-    backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#F1F0F8',
+    backgroundColor: Colores.fondoTarjeta, borderWidth: 1.5, borderColor: Colores.bordeSutil,
   },
   chipFiltroActivo: { backgroundColor: Colores.primario + '12', borderColor: Colores.primario + '50' },
-  textoFiltroIcono: { fontSize: 12, color: '#9B95B0', fontWeight: '700' },
+  textoFiltroIcono: { fontSize: 12, color: Colores.textoClaro, fontWeight: '700' },
   textoFiltroIconoActivo: { color: Colores.primario },
-  textoFiltro: { fontSize: 13, fontWeight: '600', color: '#6B6B8A' },
+  textoFiltro: { fontSize: 13, fontWeight: '600', color: Colores.textoMedio },
   textoFiltroActivo: { color: Colores.primario, fontWeight: '700' },
 
   // Carrusel
@@ -944,15 +949,15 @@ const s = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline',
     paddingHorizontal: 20, marginBottom: 14,
   },
-  tituloSeccion: { fontSize: 18, fontWeight: '800', color: '#1A1A2E' },
-  conteoSeccion: { fontSize: 12, color: '#9B95B0', fontWeight: '500' },
+  tituloSeccion: { fontSize: 18, fontWeight: '800', color: Colores.textoOscuro },
+  conteoSeccion: { fontSize: 12, color: Colores.textoClaro, fontWeight: '500' },
 
   // Grilla
   grilla: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 14 },
 
   // Tarjeta producto
   tarjetaProducto: {
-    width: ANCHO_CARTA, backgroundColor: '#FFFFFF', borderRadius: 22, padding: 16,
+    width: ANCHO_CARTA, backgroundColor: Colores.fondoTarjeta, borderRadius: 22, padding: 16,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 3, marginBottom: 2,
   },
   emojiProductoContainer: {
@@ -961,17 +966,17 @@ const s = StyleSheet.create({
   },
   emojiProductoTexto: { fontSize: 38 },
   chipEnvioProd: {
-    position: 'absolute', top: 6, right: 6, backgroundColor: '#22C55E',
+    position: 'absolute', top: 6, right: 6, backgroundColor: Colores.seguro,
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
   },
   textoChipEnvio: { color: '#FFF', fontSize: 8, fontWeight: '700' },
-  nombreProducto: { fontSize: 14, fontWeight: '700', color: '#1A1A2E', marginBottom: 8, lineHeight: 18 },
+  nombreProducto: { fontSize: 14, fontWeight: '700', color: Colores.textoOscuro, marginBottom: 8, lineHeight: 18 },
   filaPrecioProducto: { flexDirection: 'row', alignItems: 'baseline', gap: 3, marginBottom: 6 },
   precioProducto: { fontSize: 18, fontWeight: '900' },
-  monedaProducto: { fontSize: 11, fontWeight: '500', color: '#9B95B0' },
+  monedaProducto: { fontSize: 11, fontWeight: '500', color: Colores.textoClaro },
   filaEstrellas: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 12 },
   estrellas: { fontSize: 12, color: '#F59E0B' },
-  conteoResenas: { fontSize: 11, color: '#9B95B0' },
+  conteoResenas: { fontSize: 11, color: Colores.textoClaro },
   botonAgregarTarjeta: {
     alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 14,
   },
@@ -989,17 +994,17 @@ const s = StyleSheet.create({
   pieConfianza: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 24, gap: 10, paddingHorizontal: 20, marginBottom: 60 },
   badgeConfianza: { width: 24, height: 24, borderRadius: 12, backgroundColor: Colores.seguro + '20', alignItems: 'center', justifyContent: 'center' },
   iconoConfianza: { fontSize: 13, fontWeight: '800', color: Colores.seguro },
-  textoConfianza: { fontSize: 12, color: '#9B95B0', fontWeight: '500', flex: 1 },
+  textoConfianza: { fontSize: 12, color: Colores.textoClaro, fontWeight: '500', flex: 1 },
 
   // Modal compartido
   overlayModal: { flex: 1, justifyContent: 'flex-end' } as any,
   panelModal: {
-    maxHeight: '88%', backgroundColor: '#FFFFFF',
+    maxHeight: '88%', backgroundColor: Colores.fondoTarjeta,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingHorizontal: 24, paddingTop: 12, paddingBottom: Platform.OS === 'ios' ? 40 : 24,
     shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 10,
   },
-  asaModal: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E4EE', alignSelf: 'center', marginBottom: 20 },
+  asaModal: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colores.bordeSutil, alignSelf: 'center', marginBottom: 20 },
 
   // Modal producto — estilo Amazon
   carruselImagenes: { marginHorizontal: -24, marginBottom: 6 },
@@ -1011,48 +1016,48 @@ const s = StyleSheet.create({
   indicadoresSlide: { flexDirection: 'row', justifyContent: 'center', gap: 5, marginBottom: 16 },
   puntoSlide: { height: 7, borderRadius: 4 },
   headerProductoModal: { marginBottom: 12 },
-  nombreModal: { fontSize: 19, fontWeight: '800', color: '#1A1A2E', marginBottom: 6, lineHeight: 24 },
+  nombreModal: { fontSize: 19, fontWeight: '800', color: Colores.textoOscuro, marginBottom: 6, lineHeight: 24 },
   filaEstrellasModalRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   estrellasModal: { fontSize: 14, color: '#F59E0B' },
-  resenasModal: { fontSize: 14, fontWeight: '700', color: '#1A1A2E' },
+  resenasModal: { fontSize: 14, fontWeight: '700', color: Colores.textoOscuro },
   linkResenas: { fontSize: 13, color: Colores.primario, fontWeight: '500' },
   bloquePrecio: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
   precioModal: { fontSize: 26, fontWeight: '900' },
   badgeEnvio: {
-    backgroundColor: '#22C55E15', paddingHorizontal: 10, paddingVertical: 4,
+    backgroundColor: Colores.seguro + '15', paddingHorizontal: 10, paddingVertical: 4,
     borderRadius: 8,
   },
-  textoEnvio: { color: '#22C55E', fontSize: 11, fontWeight: '700' },
+  textoEnvio: { color: Colores.seguro, fontSize: 11, fontWeight: '700' },
   chipCategoriaModal: {
-    alignSelf: 'flex-start', backgroundColor: '#F1F0F8', paddingHorizontal: 12, paddingVertical: 5,
+    alignSelf: 'flex-start', backgroundColor: Colores.bordeSutil, paddingHorizontal: 12, paddingVertical: 5,
     borderRadius: 10, marginBottom: 16,
   },
   textoChipCat: { fontSize: 12, fontWeight: '700' },
   seccionModal: { marginBottom: 16 },
-  tituloSeccionModal: { fontSize: 15, fontWeight: '800', color: '#1A1A2E', marginBottom: 8 },
-  descModal: { fontSize: 14, color: '#6B6B8A', lineHeight: 21 },
+  tituloSeccionModal: { fontSize: 15, fontWeight: '800', color: Colores.textoOscuro, marginBottom: 8 },
+  descModal: { fontSize: 14, color: Colores.textoMedio, lineHeight: 21 },
   seccionCaracteristicas: {
-    backgroundColor: '#F9F8FC', borderRadius: 16, padding: 16, borderLeftWidth: 4, marginBottom: 16,
+    backgroundColor: Colores.fondoSutil, borderRadius: 16, padding: 16, borderLeftWidth: 4, marginBottom: 16,
   },
-  tituloCaracteristicas: { fontSize: 14, fontWeight: '800', color: '#1A1A2E', marginBottom: 10 },
+  tituloCaracteristicas: { fontSize: 14, fontWeight: '800', color: Colores.textoOscuro, marginBottom: 10 },
   filaCaracteristica: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
   puntoCaracteristica: { width: 6, height: 6, borderRadius: 3 },
-  textoCaracteristica: { flex: 1, fontSize: 13, color: '#6B6B8A', lineHeight: 18 },
+  textoCaracteristica: { flex: 1, fontSize: 13, color: Colores.textoMedio, lineHeight: 18 },
   seccionEspecificaciones: { marginBottom: 16 },
   filaEspecificacion: {
     flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 14,
     borderRadius: 10,
   },
-  filaEspecificacionAlt: { backgroundColor: '#F9F8FC' },
-  claveEspec: { fontSize: 13, fontWeight: '600', color: '#9B95B0' },
-  valorEspec: { fontSize: 13, fontWeight: '700', color: '#1A1A2E' },
+  filaEspecificacionAlt: { backgroundColor: Colores.fondoSutil },
+  claveEspec: { fontSize: 13, fontWeight: '600', color: Colores.textoClaro },
+  valorEspec: { fontSize: 13, fontWeight: '700', color: Colores.textoOscuro },
   seccionOpiniones: { marginBottom: 18 },
   headerOpiniones: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   resumenCal: { flexDirection: 'row', alignItems: 'baseline' },
-  calResumen: { fontSize: 22, fontWeight: '900', color: '#1A1A2E' },
-  de5: { fontSize: 14, fontWeight: '500', color: '#9B95B0' },
+  calResumen: { fontSize: 22, fontWeight: '900', color: Colores.textoOscuro },
+  de5: { fontSize: 14, fontWeight: '500', color: Colores.textoClaro },
   tarjetaOpinion: {
-    backgroundColor: '#F9F8FC', borderRadius: 14, padding: 14, marginBottom: 10,
+    backgroundColor: Colores.fondoSutil, borderRadius: 14, padding: 14, marginBottom: 10,
   },
   headerOpinion: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
   avatarOpinion: {
@@ -1060,32 +1065,32 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   textoAvatarOp: { fontSize: 14, fontWeight: '800', color: Colores.primario },
-  nombreOpinion: { fontSize: 13, fontWeight: '700', color: '#1A1A2E' },
-  fechaOpinion: { fontSize: 11, color: '#9B95B0' },
+  nombreOpinion: { fontSize: 13, fontWeight: '700', color: Colores.textoOscuro },
+  fechaOpinion: { fontSize: 11, color: Colores.textoClaro },
   estrellasOpinion: { fontSize: 12, color: '#F59E0B' },
-  textoOpinion: { fontSize: 13, color: '#6B6B8A', lineHeight: 19 },
-  divisorProducto: { height: 1, backgroundColor: '#F1F0F8', marginVertical: 14 },
+  textoOpinion: { fontSize: 13, color: Colores.textoMedio, lineHeight: 19 },
+  divisorProducto: { height: 1, backgroundColor: Colores.bordeSutil, marginVertical: 14 },
   garantiaModal: { alignItems: 'center', marginBottom: 4, marginTop: 4 },
-  textoGarantia: { fontSize: 12, color: '#9B95B0', fontWeight: '500' },
+  textoGarantia: { fontSize: 12, color: Colores.textoClaro, fontWeight: '500' },
 
   filaSelectCantidad: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#F9F8FC', borderRadius: 16, padding: 16, marginBottom: 12,
+    backgroundColor: Colores.fondoSutil, borderRadius: 16, padding: 16, marginBottom: 12,
   },
-  etiquetaCantidad: { fontSize: 15, fontWeight: '700', color: '#1A1A2E' },
+  etiquetaCantidad: { fontSize: 15, fontWeight: '700', color: Colores.textoOscuro },
   selectorCantidad: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   botonCantidad: {
-    width: 38, height: 38, borderRadius: 12, backgroundColor: '#FFFFFF',
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: '#E5E4EE',
+    width: 38, height: 38, borderRadius: 12, backgroundColor: Colores.fondoTarjeta,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: Colores.bordeSutil,
   },
-  textoCantBtn: { fontSize: 20, fontWeight: '700', color: '#1A1A2E' },
-  valorCantidad: { fontSize: 18, fontWeight: '900', color: '#1A1A2E', minWidth: 24, textAlign: 'center' },
+  textoCantBtn: { fontSize: 20, fontWeight: '700', color: Colores.textoOscuro },
+  valorCantidad: { fontSize: 18, fontWeight: '900', color: Colores.textoOscuro, minWidth: 24, textAlign: 'center' },
 
   filaSubtotalModal: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 12, marginBottom: 8,
   },
-  etiquetaSubtotal: { fontSize: 15, fontWeight: '600', color: '#9B95B0' },
+  etiquetaSubtotal: { fontSize: 15, fontWeight: '600', color: Colores.textoClaro },
   valorSubtotal: { fontSize: 20, fontWeight: '900' },
 
   botonAgregarModal: { marginBottom: 8 },
@@ -1093,12 +1098,12 @@ const s = StyleSheet.create({
   textoAgregar: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   botonComprarAhora: {
     alignItems: 'center', paddingVertical: 14, borderRadius: 20,
-    borderWidth: 2, borderColor: '#E5E4EE', marginBottom: 6,
+    borderWidth: 2, borderColor: Colores.bordeSutil, marginBottom: 6,
   },
   textoComprarAhora: { fontSize: 16, fontWeight: '700' },
 
   botonCerrarModal: { alignItems: 'center', paddingVertical: 10 },
-  textoCerrarModal: { fontSize: 14, fontWeight: '600', color: '#9B95B0' },
+  textoCerrarModal: { fontSize: 14, fontWeight: '600', color: Colores.textoClaro },
   emojiModalContainer: { width: 96, height: 96, borderRadius: 28, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 18 },
   emojiModalTexto: { fontSize: 48 },
 
@@ -1106,14 +1111,14 @@ const s = StyleSheet.create({
   headerCarrito: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20,
   },
-  tituloCarrito: { fontSize: 22, fontWeight: '900', color: '#1A1A2E' },
-  subtituloCarrito: { fontSize: 13, color: '#9B95B0', fontWeight: '500', marginTop: 2 },
-  textoVaciar: { fontSize: 14, fontWeight: '600', color: '#EF4444' },
+  tituloCarrito: { fontSize: 22, fontWeight: '900', color: Colores.textoOscuro },
+  subtituloCarrito: { fontSize: 13, color: Colores.textoClaro, fontWeight: '500', marginTop: 2 },
+  textoVaciar: { fontSize: 14, fontWeight: '600', color: Colores.peligro },
 
   carritoVacio: { alignItems: 'center', paddingVertical: 40 },
   emojiVacio: { fontSize: 56, marginBottom: 16, opacity: 0.4 },
-  tituloVacio: { fontSize: 18, fontWeight: '800', color: '#1A1A2E', marginBottom: 6 },
-  descVacio: { fontSize: 14, color: '#9B95B0', marginBottom: 20 },
+  tituloVacio: { fontSize: 18, fontWeight: '800', color: Colores.textoOscuro, marginBottom: 6 },
+  descVacio: { fontSize: 14, color: Colores.textoClaro, marginBottom: 20 },
   botonExplorar: {
     backgroundColor: Colores.primario + '15', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 16,
   },
@@ -1121,33 +1126,33 @@ const s = StyleSheet.create({
 
   itemCarrito: {
     flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 16,
-    borderBottomWidth: 1, borderBottomColor: '#F1F0F8',
+    borderBottomWidth: 1, borderBottomColor: Colores.bordeSutil,
   },
   emojiItem: {
     width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: 14,
   },
   textoEmojiItem: { fontSize: 28 },
   infoItem: { flex: 1 },
-  nombreItem: { fontSize: 14, fontWeight: '700', color: '#1A1A2E', lineHeight: 18, marginBottom: 4 },
+  nombreItem: { fontSize: 14, fontWeight: '700', color: Colores.textoOscuro, lineHeight: 18, marginBottom: 4 },
   precioItem: { fontSize: 15, fontWeight: '800', marginBottom: 2 },
-  envioItem: { fontSize: 11, color: '#22C55E', fontWeight: '600', marginBottom: 6 },
+  envioItem: { fontSize: 11, color: Colores.seguro, fontWeight: '600', marginBottom: 6 },
   controlItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
-  selectorCantidadPeq: { flexDirection: 'row', alignItems: 'center', gap: 0, borderRadius: 10, borderWidth: 1.5, borderColor: '#E5E4EE', overflow: 'hidden' },
-  botonCantPeq: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F9F8FC' },
-  textoCantPeq: { fontSize: 16, fontWeight: '700', color: '#1A1A2E' },
-  valorCantPeq: { width: 32, textAlign: 'center', fontSize: 14, fontWeight: '800', color: '#1A1A2E' },
-  textoEliminar: { fontSize: 13, color: '#EF4444', fontWeight: '600' },
-  subtotalItem: { fontSize: 14, fontWeight: '800', color: '#1A1A2E', marginLeft: 8 },
+  selectorCantidadPeq: { flexDirection: 'row', alignItems: 'center', gap: 0, borderRadius: 10, borderWidth: 1.5, borderColor: Colores.bordeSutil, overflow: 'hidden' },
+  botonCantPeq: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', backgroundColor: Colores.fondoSutil },
+  textoCantPeq: { fontSize: 16, fontWeight: '700', color: Colores.textoOscuro },
+  valorCantPeq: { width: 32, textAlign: 'center', fontSize: 14, fontWeight: '800', color: Colores.textoOscuro },
+  textoEliminar: { fontSize: 13, color: Colores.peligro, fontWeight: '600' },
+  subtotalItem: { fontSize: 14, fontWeight: '800', color: Colores.textoOscuro, marginLeft: 8 },
 
   resumenCarrito: {
-    backgroundColor: '#F9F8FC', borderRadius: 18, padding: 18, marginTop: 16, marginBottom: 16,
+    backgroundColor: Colores.fondoSutil, borderRadius: 18, padding: 18, marginTop: 16, marginBottom: 16,
   },
   filaResumen: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },
-  etiquetaResumen: { fontSize: 14, color: '#9B95B0', fontWeight: '500' },
-  valorResumen: { fontSize: 14, fontWeight: '700', color: '#1A1A2E' },
-  divisorResumen: { height: 1, backgroundColor: '#E5E4EE', marginVertical: 8 },
-  etiquetaTotal: { fontSize: 16, fontWeight: '800', color: '#1A1A2E' },
-  valorTotal: { fontSize: 18, fontWeight: '900', color: '#1A1A2E' },
+  etiquetaResumen: { fontSize: 14, color: Colores.textoClaro, fontWeight: '500' },
+  valorResumen: { fontSize: 14, fontWeight: '700', color: Colores.textoOscuro },
+  divisorResumen: { height: 1, backgroundColor: Colores.bordeSutil, marginVertical: 8 },
+  etiquetaTotal: { fontSize: 16, fontWeight: '800', color: Colores.textoOscuro },
+  valorTotal: { fontSize: 18, fontWeight: '900', color: Colores.textoOscuro },
 
   botonComprar: { marginBottom: 8 },
   degradadoComprar: {
@@ -1158,7 +1163,7 @@ const s = StyleSheet.create({
   totalComprar: { color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: '700' },
 
   seguridadCarrito: { alignItems: 'center', marginBottom: 6 },
-  textoSeguridad: { fontSize: 12, color: '#9B95B0', fontWeight: '500' },
+  textoSeguridad: { fontSize: 12, color: Colores.textoClaro, fontWeight: '500' },
 
   // Toast
   toastOverlay: {
@@ -1167,12 +1172,12 @@ const s = StyleSheet.create({
   },
   toastCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#1A1A2E', borderRadius: 16,
+    backgroundColor: Colores.textoOscuro, borderRadius: 16,
     paddingVertical: 14, paddingHorizontal: 20,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 8,
   },
   toastCheck: {
-    width: 24, height: 24, borderRadius: 12, backgroundColor: '#22C55E',
+    width: 24, height: 24, borderRadius: 12, backgroundColor: Colores.seguro,
     alignItems: 'center', justifyContent: 'center',
   },
   toastCheckTexto: { fontSize: 14, fontWeight: '800', color: '#FFF' },

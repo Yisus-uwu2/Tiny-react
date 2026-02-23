@@ -3,13 +3,14 @@
  * Stack: Registro → Carga → Tabs principales.
  * Tab bar estilo Instagram: solo íconos, relleno al seleccionar.
  */
-import React from 'react';
-import { StyleSheet, Platform } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { StyleSheet, Platform, View, Animated } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Colores } from '../constantes/colores';
 
 // Pantallas
 import PantallaRegistro      from '../pantallas/PantallaRegistro';
@@ -40,6 +41,32 @@ const ICONOS_TAB: Record<string, {
 
 const COLOR_INACTIVO = '#B0B0C0';
 
+/** Ícono animado con indicador de punto al enfocar */
+function IconoTab({ focused, cfg }: { focused: boolean; cfg: typeof ICONOS_TAB[string] }) {
+  const escala = useRef(new Animated.Value(focused ? 1 : 0.9)).current;
+  const opPunto = useRef(new Animated.Value(focused ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(escala, { toValue: focused ? 1 : 0.9, useNativeDriver: true, tension: 80, friction: 8 }),
+      Animated.timing(opPunto, { toValue: focused ? 1 : 0, duration: 250, useNativeDriver: true }),
+    ]).start();
+  }, [focused]);
+
+  return (
+    <View style={{ alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+      <Animated.View style={{ transform: [{ scale: escala }] }}>
+        <Ionicons
+          name={focused ? cfg.filled : cfg.outline}
+          size={25}
+          color={focused ? cfg.color : COLOR_INACTIVO}
+        />
+      </Animated.View>
+      <Animated.View style={[estilosTab.indicadorPunto, { backgroundColor: cfg.color, opacity: opPunto }]} />
+    </View>
+  );
+}
+
 // ── Tabs principales ────────────────────────────────────────────
 
 function TabsPrincipales() {
@@ -51,13 +78,7 @@ function TabsPrincipales() {
         tabBarShowLabel: false,
         tabBarIcon: ({ focused }) => {
           const cfg = ICONOS_TAB[route.name];
-          return (
-            <Ionicons
-              name={focused ? cfg.filled : cfg.outline}
-              size={focused ? 27 : 25}
-              color={focused ? cfg.color : COLOR_INACTIVO}
-            />
-          );
+          return <IconoTab focused={focused} cfg={cfg} />;
         },
         tabBarInactiveTintColor: COLOR_INACTIVO,
         tabBarStyle: estilosTab.barra,
@@ -74,14 +95,21 @@ function TabsPrincipales() {
 
 const estilosTab = StyleSheet.create({
   barra: {
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E8E8F0',
+    backgroundColor: Colores.fondoTarjeta,
+    borderTopWidth: 0,
     height: Platform.OS === 'ios' ? 92 : 68,
     paddingBottom: Platform.OS === 'ios' ? 30 : 12,
     paddingTop: 12,
-    elevation: 0,
-    shadowOpacity: 0,
+    elevation: 12,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+  },
+  indicadorPunto: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
   },
 });
 
