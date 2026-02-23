@@ -23,24 +23,24 @@ export const babyService = {
         if (userError) throw userError;
 
         const { data, error } = await supabase
-            .from('Datos')
+            .from('datos' as any)
             .select('*')
             .eq('id_Anexo', userData.user.id);
 
         if (error) throw error;
-        return data as DatosRow[];
+        return data as unknown as DatosRow[];
     },
 
     // Obtener un registro por su ID
     async getBabyById(id: number) {
         const { data, error } = await supabase
-            .from('Datos')
+            .from('datos' as any)
             .select('*')
             .eq('id', id)
             .single();
 
         if (error) throw error;
-        return data as DatosRow;
+        return data as unknown as DatosRow;
     },
 
     // Registrar un nuevo registro
@@ -59,32 +59,32 @@ export const babyService = {
         };
 
         const { data, error } = await supabase
-            .from('Datos')
+            .from('datos' as any)
             .insert(payload)
             .select()
             .single();
 
         if (error) throw error;
-        return data as DatosRow;
+        return data as unknown as DatosRow;
     },
 
     // Actualizar datos
     async updateBaby(id: number, updates: DatosUpdate) {
         const { data, error } = await supabase
-            .from('Datos')
+            .from('datos' as any)
             .update(updates)
             .eq('id', id)
             .select()
             .single();
 
         if (error) throw error;
-        return data as DatosRow;
+        return data as unknown as DatosRow;
     },
 
     // Eliminar un registro
     async deleteBaby(id: number) {
         const { error } = await supabase
-            .from('Datos')
+            .from('datos' as any)
             .delete()
             .eq('id', id);
 

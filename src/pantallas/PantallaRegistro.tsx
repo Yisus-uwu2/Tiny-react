@@ -117,18 +117,21 @@ export default function PantallaRegistro({ navigation }: any) {
       animarCambio();
     } else {
       setIsSaving(true);
+      console.log('Iniciando guardado de datos del bebé...');
       try {
         const parts = form.nombre.trim().split(' ');
         const primer_Nombre = parts[0] || '';
         const apellido_Paterno = parts.length > 1 ? parts.slice(1).join(' ') : '';
         const sexo = form.sexo === 'Masculino' ? 'Masculino' : 'Femenino';
 
-        await babyService.createBaby({
+        console.log('Intentando invocar createBaby con:', { primer_Nombre, apellido_Paterno, sexo, fechaNac: form.fechaNac });
+        const resBaby = await babyService.createBaby({
           primer_Nombre,
           apellido_Paterno,
           fecha_Nacimiento: form.fechaNac ? form.fechaNac.toISOString().split('T')[0] : undefined,
           sexo
         });
+        console.log('createBaby exitoso:', resBaby);
 
         const gSang = form.grupoSanguineo?.toUpperCase();
         let grupoFormat: "A" | "B" | "AB" | "O" = "O";
@@ -138,28 +141,34 @@ export default function PantallaRegistro({ navigation }: any) {
 
         const rhFormat: "+" | "-" = gSang?.includes('-') ? '-' : '+';
 
-        await healthService.upsertSalud({
+        console.log('Intentando invocar upsertSalud con:', { grupoFormat, rhFormat });
+        const resSalud = await healthService.upsertSalud({
           peso: parseFloat(form.peso) || null,
           talla: parseFloat(form.talla) || null,
           grupo_sanguineo: grupoFormat,
           tipo_RH: rhFormat
         });
+        console.log('upsertSalud exitoso:', resSalud);
 
         const algBool = !!(form.alergias && form.alergias.trim().toLowerCase() !== 'ninguna' && form.alergias.trim().toLowerCase() !== 'sin alergias conocidas');
         const compBool = !!(form.complicaciones && form.complicaciones.trim().toLowerCase() !== 'ninguna');
 
-        await healthService.upsertSaludDetalles({
+        console.log('Intentando invocar upsertSaludDetalles...');
+        const resSaludDetalles = await healthService.upsertSaludDetalles({
           Alergias: algBool,
           detalles_Ale: form.alergias,
           complicaciones: compBool,
           detalles_Com: form.complicaciones
         });
+        console.log('upsertSaludDetalles exitoso:', resSaludDetalles);
 
         setIsSaving(false);
+        console.log('Navegando a Carga...');
         navigation.replace('Carga');
       } catch (error: any) {
         setIsSaving(false);
-        console.error('Error al registrar al bebé:', error);
+        console.error('Error CATCH al registrar al bebé:', error);
+        console.error('Detalles del error:', JSON.stringify(error, null, 2));
         Alert.alert('Error', error.message || 'No se pudo guardar la información del bebé.');
       }
     }
