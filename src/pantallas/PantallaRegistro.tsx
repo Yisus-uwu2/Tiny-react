@@ -6,11 +6,13 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, Platform, Animated, Easing,
-  KeyboardAvoidingView, Alert, Dimensions, LayoutAnimation, UIManager,
+  KeyboardAvoidingView, Alert, Dimensions, LayoutAnimation, UIManager, ActivityIndicator
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Colores } from '../constantes/colores';
+import { babyService } from '../../services/babies';
+import { healthService } from '../../services/health';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -57,6 +59,7 @@ export default function PantallaRegistro({ navigation }: any) {
   const [paso, setPaso] = useState(0);
   const [mostrarFecha, setMostrarFecha] = useState(false);
   const [mostrarHora, setMostrarHora] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const animEntrada = useRef(new Animated.Value(0)).current;
   const animContenido = useRef(new Animated.Value(0)).current;
@@ -106,14 +109,59 @@ export default function PantallaRegistro({ navigation }: any) {
     return ok;
   };
 
-  const siguiente = () => {
+  const siguiente = async () => {
     if (!validar()) { Alert.alert('Campos obligatorios', 'Completa los campos marcados.'); return; }
     if (paso < PASOS.length - 1) {
       LayoutAnimation.configureNext(LayoutAnimation.create(250, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
       setPaso(p => p + 1);
       animarCambio();
     } else {
-      navigation.replace('Carga');
+      setIsSaving(true);
+      try {
+        const parts = form.nombre.trim().split(' ');
+        const primer_Nombre = parts[0] || '';
+        const apellido_Paterno = parts.length > 1 ? parts.slice(1).join(' ') : '';
+        const sexo = form.sexo === 'Masculino' ? 'Masculino' : 'Femenino';
+
+        await babyService.createBaby({
+          primer_Nombre,
+          apellido_Paterno,
+          fecha_Nacimiento: form.fechaNac ? form.fechaNac.toISOString().split('T')[0] : undefined,
+          sexo
+        });
+
+        const gSang = form.grupoSanguineo?.toUpperCase();
+        let grupoFormat: "A" | "B" | "AB" | "O" = "O";
+        if (gSang?.includes('AB')) grupoFormat = 'AB';
+        else if (gSang?.includes('A')) grupoFormat = 'A';
+        else if (gSang?.includes('B')) grupoFormat = 'B';
+
+        const rhFormat: "+" | "-" = gSang?.includes('-') ? '-' : '+';
+
+        await healthService.upsertSalud({
+          peso: parseFloat(form.peso) || null,
+          talla: parseFloat(form.talla) || null,
+          grupo_sanguineo: grupoFormat,
+          tipo_RH: rhFormat
+        });
+
+        const algBool = !!(form.alergias && form.alergias.trim().toLowerCase() !== 'ninguna' && form.alergias.trim().toLowerCase() !== 'sin alergias conocidas');
+        const compBool = !!(form.complicaciones && form.complicaciones.trim().toLowerCase() !== 'ninguna');
+
+        await healthService.upsertSaludDetalles({
+          Alergias: algBool,
+          detalles_Ale: form.alergias,
+          complicaciones: compBool,
+          detalles_Com: form.complicaciones
+        });
+
+        setIsSaving(false);
+        navigation.replace('Carga');
+      } catch (error: any) {
+        setIsSaving(false);
+        console.error('Error al registrar al bebé:', error);
+        Alert.alert('Error', error.message || 'No se pudo guardar la información del bebé.');
+      }
     }
   };
 
@@ -151,10 +199,10 @@ export default function PantallaRegistro({ navigation }: any) {
               </TouchableOpacity>
             </View>
           </View>
-          {mostrarFecha && <DateTimePicker value={form.fechaNac || new Date()} mode="date" display={Platform.OS === 'ios' ? 'spinner' : 'default'} maximumDate={new Date()} minimumDate={new Date(2015,0,1)} onChange={(_,d) => { setMostrarFecha(false); if(d) { setForm(p => ({...p, fechaNac: d})); if(errores.fechaNac) setErrores(p => ({...p, fechaNac: false})); }}} />}
-          {mostrarHora && <DateTimePicker value={form.horaNac || new Date()} mode="time" is24Hour display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={(_,h) => { setMostrarHora(false); if(h) { setForm(p => ({...p, horaNac: h})); if(errores.horaNac) setErrores(p => ({...p, horaNac: false})); }}} />}
+          {mostrarFecha && <DateTimePicker value={form.fechaNac || new Date()} mode="date" display={Platform.OS === 'ios' ? 'spinner' : 'default'} maximumDate={new Date()} minimumDate={new Date(2015, 0, 1)} onChange={(_, d) => { setMostrarFecha(false); if (d) { setForm(p => ({ ...p, fechaNac: d })); if (errores.fechaNac) setErrores(p => ({ ...p, fechaNac: false })); } }} />}
+          {mostrarHora && <DateTimePicker value={form.horaNac || new Date()} mode="time" is24Hour display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={(_, h) => { setMostrarHora(false); if (h) { setForm(p => ({ ...p, horaNac: h })); if (errores.horaNac) setErrores(p => ({ ...p, horaNac: false })); } }} />}
           <Text style={s.labelGrupo}>Sexo</Text>
-          <Chips opciones={['Masculino','Femenino','Otro']} valor={form.sexo} onSelect={v => setForm(p => ({...p, sexo: v}))} />
+          <Chips opciones={['Masculino', 'Femenino', 'Otro']} valor={form.sexo} onSelect={v => setForm(p => ({ ...p, sexo: v }))} />
           <View style={s.fila}>
             <View style={s.mitad}><Campo label="Peso (kg)" valor={form.peso} onChange={set('peso')} keyboardType="decimal-pad" error={errores.peso} placeholder="3.2" /></View>
             <View style={s.mitad}><Campo label="Talla (cm)" valor={form.talla} onChange={set('talla')} keyboardType="decimal-pad" error={errores.talla} placeholder="49" /></View>
@@ -172,7 +220,7 @@ export default function PantallaRegistro({ navigation }: any) {
           </View>
           <Campo label="Grupo sanguíneo" valor={form.grupoSanguineo} onChange={set('grupoSanguineo')} error={errores.grupoSanguineo} placeholder="O+" />
           <Text style={s.labelGrupo}>Tipo de parto</Text>
-          <Chips opciones={['Natural','Cesárea','Instrumentado']} valor={form.tipoParto} onSelect={v => setForm(p => ({...p, tipoParto: v}))} />
+          <Chips opciones={['Natural', 'Cesárea', 'Instrumentado']} valor={form.tipoParto} onSelect={v => setForm(p => ({ ...p, tipoParto: v }))} />
         </Animated.View>
       );
       case 2: return (
@@ -189,11 +237,11 @@ export default function PantallaRegistro({ navigation }: any) {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <LinearGradient colors={['#F3EEFF','#FAF8FF', Colores.fondo]} locations={[0,0.35,1]} style={s.bg}>
+      <LinearGradient colors={['#F3EEFF', '#FAF8FF', Colores.fondo]} locations={[0, 0.35, 1]} style={s.bg}>
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
           {/* Encabezado */}
-          <Animated.View style={[s.header, { opacity: animEntrada, transform: [{ translateY: animEntrada.interpolate({ inputRange:[0,1], outputRange:[20,0] }) }] }]}>
+          <Animated.View style={[s.header, { opacity: animEntrada, transform: [{ translateY: animEntrada.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }]}>
             <Animated.View style={{ transform: [{ translateY: animFlotante }] }}>
               <LinearGradient colors={[Colores.primarioClaro, Colores.primario]} style={s.logoCircle}>
                 <Text style={{ fontSize: 34 }}>👶</Text>
@@ -211,14 +259,14 @@ export default function PantallaRegistro({ navigation }: any) {
               return (
                 <View key={i} style={s.stepDot}>
                   <View style={[s.stepCircle, activo && s.stepCircleActive, hecho && s.stepCircleDone]}>
-                    {hecho ? <Text style={s.stepCheck}>✓</Text> : <Text style={[s.stepNum, activo && s.stepNumActive]}>{i+1}</Text>}
+                    {hecho ? <Text style={s.stepCheck}>✓</Text> : <Text style={[s.stepNum, activo && s.stepNumActive]}>{i + 1}</Text>}
                   </View>
                   <Text style={[s.stepLabel, activo && s.stepLabelActive]} numberOfLines={1}>{p.titulo}</Text>
                 </View>
               );
             })}
             <View style={s.stepLine}>
-              <Animated.View style={[s.stepLineFill, { width: animProgreso.interpolate({ inputRange:[0,1], outputRange:['0%','100%'] }) }]} />
+              <Animated.View style={[s.stepLineFill, { width: animProgreso.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} />
             </View>
           </View>
 
@@ -244,11 +292,15 @@ export default function PantallaRegistro({ navigation }: any) {
             )}
             <View style={{ flex: 1 }}>
               <TouchableOpacity activeOpacity={1}
-                onPressIn={() => Animated.spring(escalaBtn, { toValue: 0.96, useNativeDriver: true, tension: 120, friction: 8 }).start()}
-                onPressOut={() => { Animated.spring(escalaBtn, { toValue: 1, useNativeDriver: true, tension: 40, friction: 6 }).start(); siguiente(); }}>
+                onPressIn={() => !isSaving && Animated.spring(escalaBtn, { toValue: 0.96, useNativeDriver: true, tension: 120, friction: 8 }).start()}
+                onPressOut={() => { if (!isSaving) { Animated.spring(escalaBtn, { toValue: 1, useNativeDriver: true, tension: 40, friction: 6 }).start(); siguiente(); } }}>
                 <Animated.View style={{ transform: [{ scale: escalaBtn }] }}>
-                  <LinearGradient colors={[Colores.primarioClaro, Colores.primario]} start={{x:0,y:0}} end={{x:1,y:0}} style={s.btnNext}>
-                    <Text style={s.btnNextText}>{paso === PASOS.length - 1 ? 'Completar registro' : 'Siguiente →'}</Text>
+                  <LinearGradient colors={[Colores.primarioClaro, Colores.primario]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.btnNext}>
+                    {isSaving ? (
+                      <ActivityIndicator color="#FFF" />
+                    ) : (
+                      <Text style={s.btnNextText}>{paso === PASOS.length - 1 ? 'Completar registro' : 'Siguiente →'}</Text>
+                    )}
                   </LinearGradient>
                 </Animated.View>
               </TouchableOpacity>

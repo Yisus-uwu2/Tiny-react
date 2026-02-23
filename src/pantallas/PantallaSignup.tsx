@@ -43,7 +43,7 @@ export default function PantallaSignup({ navigation }: any) {
                 full_name: fullName.trim(),
             });
             setIsLoading(false);
-            Alert.alert('Éxito', 'Cuenta creada correctamente.', [{ text: 'Continuar', onPress: () => navigation.replace('Registro') }]);
+            Alert.alert('Éxito', 'Cuenta creada correctamente.');
         } catch (error: any) {
             setIsLoading(false);
             Alert.alert('Error de Registro', error.message || 'Error al crear la cuenta.');

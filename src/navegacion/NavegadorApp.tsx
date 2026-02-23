@@ -151,9 +151,9 @@ export default function NavegadorApp() {
           {session && session.user ? (
             // Si el usuario está autenticado, muestra la app normal y el registro del bebé si es necesario
             <>
+              <Stack.Screen name="Carga" component={PantallaCarga} />
               <Stack.Screen name="Principal" component={TabsPrincipales} />
               <Stack.Screen name="Registro" component={PantallaRegistro} />
-              <Stack.Screen name="Carga" component={PantallaCarga} />
             </>
           ) : (
             // Flujo de Autenticación

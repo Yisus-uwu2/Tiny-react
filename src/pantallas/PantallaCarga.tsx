@@ -6,6 +6,7 @@ import { View, Text, StyleSheet, Dimensions, Animated, Easing } from 'react-nati
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Defs, LinearGradient as SvgGrad, Stop } from 'react-native-svg';
 import { Colores } from '../constantes/colores';
+import { babyService } from '../../services/babies';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -98,9 +99,23 @@ export default function PantallaCarga({ navigation }: any) {
       ]),
     ]).start();
 
+    const checkBabyAndNavigate = async () => {
+      try {
+        const babies = await babyService.getBabies();
+        if (babies && babies.length > 0) {
+          navigation.replace('Principal');
+        } else {
+          navigation.replace('Registro');
+        }
+      } catch (error) {
+        console.error('Error fetching babies:', error);
+        navigation.replace('Registro');
+      }
+    };
+
     const timer = setTimeout(() => {
       Animated.timing(opFade, { toValue: 0, duration: 450, useNativeDriver: true }).start(() => {
-        navigation.replace('Principal');
+        checkBabyAndNavigate();
       });
     }, 3500);
     return () => clearTimeout(timer);
