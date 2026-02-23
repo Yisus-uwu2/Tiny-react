@@ -14,25 +14,51 @@ import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Colores } from '../constantes/colores';
 import { useDatosSensor } from '../hooks/useDatosSensor';
+import { authService } from '../../services/auth';
+import { babyService } from '../../services/babies';
+import { healthService } from '../../services/health';
+import { caregiverService } from '../../services/caregivers';
+import { emergencyContactService } from '../../services/emergencyContacts';
 
 const { width: ANCHO } = Dimensions.get('window');
 
 // ── Tipos ───────────────────────────────────────────────────────
 
 interface DatosBebe {
-  nombre: string;
-  fechaNacimiento: string;
+  id?: number | string;
+  nombre_nino: string;
+  fecha_nacimiento: string;
+  sexo: string;
+  condicion_medica: string;
+  grupo_sanguineo: string;
+  tipo_RH: string;
+}
+
+interface DatosSalud {
+  id?: number;
   peso: string;
   talla: string;
-  sexo: string;
-  tipoSangre: string;
+  grupo_sanguineo: string;
+  tipo_RH: string;
+  grupo_distinto: string;
+  complicaciones: boolean;
+  detalles_complicaciones: string;
+  alergias: boolean;
+  detalles_alergias: string;
 }
 
 interface Contacto {
-  id: string;
+  id: number | string;
   nombre: string;
   telefono: string;
   rol: string;
+}
+
+interface DatosEmergencia {
+  id: number | string;
+  nombre: string;
+  telefono: string;
+  relacion: string;
 }
 
 interface DatosPediatra {
@@ -405,6 +431,37 @@ function TarjetaPadreEditable({ contacto, onEditar, onEliminar }: { contacto: Co
   );
 }
 
+// ── Tarjeta de emergencia ───────────────────────────────────
+
+function TarjetaEmergencia({ contacto, onEditar, onEliminar }: { contacto: DatosEmergencia; onEditar: () => void; onEliminar: () => void }) {
+  const color = '#EF4444';
+  const iconoRol = 'alert-circle';
+  return (
+    <View style={[estilos.tarjetaContacto, { borderLeftColor: color }]}>
+      <View style={[estilos.avatarContacto, { backgroundColor: color + '18' }]}>
+        <Ionicons name={iconoRol} size={20} color={color} />
+      </View>
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <Text style={estilos.nombreContacto}>{contacto.nombre}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+          {contacto.relacion ? (
+            <View style={[estilos.badgeRol, { backgroundColor: color + '15' }]}>
+              <Text style={[estilos.badgeRolTexto, { color }]}>{contacto.relacion}</Text>
+            </View>
+          ) : null}
+          <Text style={estilos.telContacto}>{contacto.telefono}</Text>
+        </View>
+      </View>
+      <TouchableOpacity onPress={onEditar} style={estilos.btnAccionContacto}>
+        <Ionicons name="create-outline" size={17} color={Colores.primario} />
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onEliminar} style={[estilos.btnAccionContacto, { backgroundColor: '#FEE2E2' }]}>
+        <Ionicons name="trash-outline" size={17} color="#EF4444" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 // ═════════════════════════════════════════════════════════════════
 // Pantalla principal
 // ═════════════════════════════════════════════════════════════════
@@ -412,22 +469,108 @@ function TarjetaPadreEditable({ contacto, onEditar, onEliminar }: { contacto: Co
 export default function PantallaPerfil() {
   const { datos } = useDatosSensor();
 
-  // ── Estado del bebé
+  const cerrarSesion = async () => {
+    try {
+      await authService.signOut();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  // ── Estado de Carga
+  const [cargandoPerfil, setCargandoPerfil] = useState(true);
+
+  // ── Estado  // ── Bebé
   const [bebe, setBebe] = useState<DatosBebe>({
-    nombre: 'Emma Valentina', fechaNacimiento: '15 Mar 2026', peso: '3.2',
-    talla: '49', sexo: 'Femenino', tipoSangre: 'O+',
+    nombre_nino: 'Cargando...', fecha_nacimiento: '', sexo: '', condicion_medica: '', grupo_sanguineo: '', tipo_RH: ''
   });
   const [formBebe, setFormBebe] = useState<DatosBebe>({ ...bebe });
   const [modalBebe, setModalBebe] = useState(false);
 
+  // ── Salud
+  const [salud, setSalud] = useState<DatosSalud>({
+    peso: '', talla: '', grupo_sanguineo: 'O', tipo_RH: 'Positivo', grupo_distinto: '', complicaciones: false, detalles_complicaciones: '', alergias: false, detalles_alergias: ''
+  });
+  const [formSalud, setFormSalud] = useState<DatosSalud>({ ...salud });
+  const [modalSalud, setModalSalud] = useState(false);
+
+  useEffect(() => {
+    cargarPerfil();
+  }, []);
+
+  const cargarPerfil = async () => {
+    try {
+      setCargandoPerfil(true);
+      const bebes = await babyService.getBabies();
+      if (bebes && bebes.length > 0) {
+        const b = bebes[0];
+        setBebe({
+          id: b.id,
+          nombre_nino: `${b.primer_Nombre || ''} ${b.segundo_Nombre || ''} ${b.apellido_Paterno || ''} ${b.apellido_Materno || ''}`.trim(),
+          fecha_nacimiento: b.fecha_Nacimiento || '',
+          sexo: b.sexo || 'Femenino',
+          condicion_medica: 'N/D',
+          grupo_sanguineo: 'O',
+          tipo_RH: 'Positivo',
+        });
+
+        // ── Cargar Salud & SaludDetalles
+        const saludDB = await healthService.getSalud();
+        const detallesDB = await healthService.getSaludDetalles();
+
+        setSalud({
+          id: saludDB?.id,
+          peso: saludDB?.peso?.toString() || '',
+          talla: saludDB?.talla?.toString() || '',
+          grupo_sanguineo: saludDB?.grupo_sanguineo || '',
+          tipo_RH: saludDB?.tipo_RH || '',
+          grupo_distinto: saludDB?.grupo_distinto || '',
+          complicaciones: detallesDB?.complicaciones || false,
+          detalles_complicaciones: detallesDB?.detalles_Com || '',
+          alergias: detallesDB?.Alergias || false,
+          detalles_alergias: detallesDB?.detalles_Ale || '',
+        });
+
+        // ── Cargar Cuidadores
+        const cuidadoresDB = await caregiverService.getCaregivers();
+        if (cuidadoresDB) {
+          setContactos(cuidadoresDB.map((c) => ({
+            id: c.id,
+            nombre: `${c.primer_Nombre || ''} ${c.apellido_Paterno || ''}`.trim(),
+            telefono: c.numero || '',
+            rol: c.Custodios || 'Mamá',
+          })));
+        }
+
+        // ── Cargar Emergencias
+        const emergenciasDB = await emergencyContactService.getEmergencyContacts();
+        if (emergenciasDB) {
+          setEmergencias(emergenciasDB.map((e) => ({
+            id: e.id,
+            nombre: e.Nombre || '',
+            telefono: e.numero || '',
+            relacion: 'Emergencia',
+          })));
+        }
+      }
+    } catch (e: any) {
+      console.error('Error cargando perfil:', e.message);
+    } finally {
+      setCargandoPerfil(false);
+    }
+  };
+
   // ── Contactos
-  const [contactos, setContactos] = useState<Contacto[]>([
-    { id: '1', nombre: 'María López', telefono: '+52 55 1234 5678', rol: 'Mamá' },
-    { id: '2', nombre: 'Carlos López', telefono: '+52 55 8765 4321', rol: 'Papá' },
-  ]);
+  const [contactos, setContactos] = useState<Contacto[]>([]);
   const [formContacto, setFormContacto] = useState<Contacto>({ id: '', nombre: '', telefono: '', rol: 'Mamá' });
   const [modalContacto, setModalContacto] = useState(false);
-  const [editandoContacto, setEditandoContacto] = useState<string | null>(null);
+  const [editandoContacto, setEditandoContacto] = useState<number | string | null>(null);
+
+  // ── Emergencias
+  const [emergencias, setEmergencias] = useState<DatosEmergencia[]>([]);
+  const [formEmergencia, setFormEmergencia] = useState<DatosEmergencia>({ id: '', nombre: '', telefono: '', relacion: 'Padres' });
+  const [modalEmergencia, setModalEmergencia] = useState(false);
+  const [editandoEmergencia, setEditandoEmergencia] = useState<number | string | null>(null);
 
   // ── Pediatra
   const [pediatra, setPediatra] = useState<DatosPediatra>({
@@ -454,13 +597,68 @@ export default function PantallaPerfil() {
 
   const toggleSeccion = (id: string) => setSeccionAbierta(prev => (prev === id ? null : id));
 
-  // ── Handlers Bebé
   const abrirEditarBebe = () => { setFormBebe({ ...bebe }); setModalBebe(true); };
-  const guardarBebe = () => { setBebe({ ...formBebe }); setModalBebe(false); };
+  const guardarBebe = async () => {
+    try {
+      let result;
+      const partesNombre = (formBebe.nombre_nino || '').trim().split(' ');
+      const primerNombre = partesNombre[0] || '';
+      const segundoNombre = partesNombre.length > 2 ? partesNombre[1] : '';
+      const apellidoPaterno = partesNombre.length === 2 ? partesNombre[1] : (partesNombre.length > 2 ? partesNombre[2] : '');
+      const apellidoMaterno = partesNombre.length > 3 ? partesNombre.slice(3).join(' ') : '';
+
+      const payload = {
+        primer_Nombre: primerNombre,
+        segundo_Nombre: segundoNombre,
+        apellido_Paterno: apellidoPaterno,
+        apellido_Materno: apellidoMaterno,
+        fecha_Nacimiento: formBebe.fecha_nacimiento || '',
+        sexo: (formBebe.sexo || 'Femenino') as any,
+      };
+      if (bebe.id) {
+        result = await babyService.updateBaby(bebe.id as number, payload);
+      } else {
+        result = await babyService.createBaby(payload);
+      }
+      setBebe({ ...formBebe, id: result.id });
+      setModalBebe(false);
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Error', 'No se pudo guardar');
+    }
+  };
+
+  // ── Handlers Salud
+  const abrirEditarSalud = () => { setFormSalud({ ...salud }); setModalSalud(true); };
+  const guardarSalud = async () => {
+    try {
+      const saludPayload = {
+        peso: parseFloat(formSalud.peso) || null,
+        talla: parseFloat(formSalud.talla) || null,
+        grupo_sanguineo: formSalud.grupo_sanguineo as any,
+        tipo_RH: formSalud.tipo_RH as any,
+        grupo_distinto: formSalud.grupo_distinto,
+      };
+      const detallesPayload = {
+        complicaciones: formSalud.complicaciones,
+        detalles_Com: formSalud.detalles_complicaciones,
+        Alergias: formSalud.alergias,
+        detalles_Ale: formSalud.detalles_alergias,
+      };
+      const saludRes = await healthService.upsertSalud(saludPayload);
+      await healthService.upsertSaludDetalles(detallesPayload);
+
+      setSalud({ ...formSalud, id: saludRes.id });
+      setModalSalud(false);
+    } catch (e: any) {
+      console.error('Error guardando salud:', e.message);
+      Alert.alert('Error', 'No se pudieron guardar los detalles de salud');
+    }
+  };
 
   // ── Handlers Contactos
   const abrirNuevoContacto = () => {
-    setFormContacto({ id: Date.now().toString(), nombre: '', telefono: '', rol: 'Mamá' });
+    setFormContacto({ id: Date.now().toString() + 'temp', nombre: '', telefono: '', rol: 'Mamá' });
     setEditandoContacto(null);
     setModalContacto(true);
   };
@@ -469,18 +667,103 @@ export default function PantallaPerfil() {
     setEditandoContacto(c.id);
     setModalContacto(true);
   };
-  const guardarContacto = () => {
-    if (editandoContacto) {
-      setContactos(prev => prev.map(c => (c.id === editandoContacto ? { ...formContacto } : c)));
-    } else {
-      setContactos(prev => [...prev, { ...formContacto }]);
+  const guardarContacto = async () => {
+    try {
+      const [first, ...rest] = formContacto.nombre.split(' ');
+      const payload = {
+        primer_Nombre: first || '',
+        apellido_Paterno: rest.join(' ') || '',
+        numero: formContacto.telefono,
+        Custodios: formContacto.rol as any,
+      };
+
+      if (editandoContacto && typeof editandoContacto === 'number') {
+        const updated = await caregiverService.updateCaregiver(editandoContacto, payload);
+        setContactos(prev => prev.map(c => (c.id === editandoContacto ? {
+          ...formContacto, id: updated.id, nombre: `${updated.primer_Nombre || ''} ${updated.apellido_Paterno || ''}`.trim(), telefono: updated.numero || '', rol: updated.Custodios || ''
+        } : c)));
+      } else {
+        const created = await caregiverService.createCaregiver(payload as any);
+        setContactos(prev => [...prev, {
+          ...formContacto, id: created.id, nombre: `${created.primer_Nombre || ''} ${created.apellido_Paterno || ''}`.trim(), telefono: created.numero || '', rol: created.Custodios || ''
+        }]);
+      }
+      setModalContacto(false);
+    } catch (e: any) {
+      console.error('Error guardando cuidador:', e.message);
+      Alert.alert('Error', 'No se pudo guardar el cuidador');
     }
-    setModalContacto(false);
   };
-  const eliminarContacto = (id: string) => {
+  const eliminarContacto = (id: number | string) => {
+    Alert.alert('Eliminar cuidador', '¿Estás seguro?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar', style: 'destructive',
+        onPress: async () => {
+          try {
+            if (typeof id === 'number') {
+              await caregiverService.deleteCaregiver(id);
+            }
+            setContactos(prev => prev.filter(c => c.id !== id));
+          } catch (e) {
+            console.error('Error eliminando cuidador', e);
+          }
+        }
+      },
+    ]);
+  };
+
+  // ── Handlers Emergencias
+  const abrirNuevaEmergencia = () => {
+    setFormEmergencia({ id: Date.now().toString() + 'temp', nombre: '', telefono: '', relacion: 'Padres' });
+    setEditandoEmergencia(null);
+    setModalEmergencia(true);
+  };
+  const abrirEditarEmergencia = (e: DatosEmergencia) => {
+    setFormEmergencia({ ...e });
+    setEditandoEmergencia(e.id);
+    setModalEmergencia(true);
+  };
+  const guardarEmergencia = async () => {
+    try {
+      const payload = {
+        Nombre: formEmergencia.nombre,
+        numero: formEmergencia.telefono,
+      };
+
+      if (editandoEmergencia && typeof editandoEmergencia === 'number') {
+        const updated = await emergencyContactService.updateEmergencyContact(editandoEmergencia, payload as any);
+        setEmergencias(prev => prev.map(e => (e.id === editandoEmergencia ? {
+          ...formEmergencia, id: updated.id, nombre: updated.Nombre || '', telefono: updated.numero || '', relacion: 'Emergencia'
+        } : e)));
+      } else {
+        const created = await emergencyContactService.createEmergencyContact(payload as any);
+        setEmergencias(prev => [...prev, {
+          ...formEmergencia, id: created.id, nombre: created.Nombre || '', telefono: created.numero || '', relacion: 'Emergencia'
+        }]);
+      }
+      setModalEmergencia(false);
+    } catch (e: any) {
+      console.error('Error guardando emergencia:', e.message);
+      Alert.alert('Error', 'No se pudo guardar el contacto de emergencia');
+    }
+  };
+  const eliminarEmergencia = (id: number | string) => {
     Alert.alert('Eliminar contacto', '¿Estás seguro?', [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Eliminar', style: 'destructive', onPress: () => setContactos(prev => prev.filter(c => c.id !== id)) },
+      {
+        text: 'Eliminar', style: 'destructive',
+        onPress: async () => {
+          try {
+            if (typeof id === 'number') {
+              await emergencyContactService.deleteEmergencyContact(id);
+            }
+            setEmergencias(prev => prev.filter(e => e.id !== id));
+          } catch (e) {
+            console.error('Error eliminando emergencia', e);
+          }
+        }
+      },
     ]);
   };
 
@@ -494,7 +777,7 @@ export default function PantallaPerfil() {
 
   // ── Edad del bebé
   const calcularEdad = () => {
-    const nacimiento = parsearFecha(bebe.fechaNacimiento);
+    const nacimiento = parsearFecha(bebe.fecha_nacimiento);
     const hoy = new Date();
     const diffMs = hoy.getTime() - nacimiento.getTime();
     const dias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -530,9 +813,14 @@ export default function PantallaPerfil() {
         {/* Header */}
         <View style={estilos.header}>
           <Text style={estilos.headerTitulo}>Perfil</Text>
-          <TouchableOpacity style={estilos.btnConfig}>
-            <Ionicons name="settings-outline" size={22} color={Colores.textoMedio} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <TouchableOpacity style={estilos.btnConfig}>
+              <Ionicons name="settings-outline" size={22} color={Colores.textoMedio} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[estilos.btnConfig, { backgroundColor: '#FEE2E2' }]} onPress={cerrarSesion}>
+              <Ionicons name="log-out-outline" size={22} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* ── Tarjeta del bebé ── */}
@@ -540,25 +828,19 @@ export default function PantallaPerfil() {
           <View style={estilos.avatarBebe}>
             <Text style={{ fontSize: 36 }}>{bebe.sexo === 'Femenino' ? '👧' : '👦'}</Text>
           </View>
-          <Text style={estilos.nombreBebe}>{bebe.nombre}</Text>
-          <Text style={estilos.edadBebe}>{calcularEdad()} • {bebe.sexo}</Text>
+          <Text style={estilos.nombreBebe}>{bebe.nombre_nino || 'Sin registro'}</Text>
+          <Text style={estilos.edadBebe}>{calcularEdad()} • {bebe.sexo || 'Sin registro'}</Text>
 
           <View style={estilos.statsRow}>
             <View style={estilos.statItem}>
-              <Ionicons name="scale-outline" size={16} color={Colores.primario} />
-              <Text style={estilos.statValor}>{bebe.peso} kg</Text>
-              <Text style={estilos.statLabel}>Peso</Text>
-            </View>
-            <View style={[estilos.statDivisor]} />
-            <View style={estilos.statItem}>
-              <Ionicons name="resize-outline" size={16} color={Colores.secundario} />
-              <Text style={estilos.statValor}>{bebe.talla} cm</Text>
-              <Text style={estilos.statLabel}>Talla</Text>
+              <Ionicons name="medical-outline" size={16} color={Colores.primario} />
+              <Text style={estilos.statValor}>{bebe.condicion_medica || 'N/D'}</Text>
+              <Text style={estilos.statLabel}>Condición Médica</Text>
             </View>
             <View style={[estilos.statDivisor]} />
             <View style={estilos.statItem}>
               <Ionicons name="water-outline" size={16} color="#EF4444" />
-              <Text style={estilos.statValor}>{bebe.tipoSangre}</Text>
+              <Text style={estilos.statValor}>{bebe.grupo_sanguineo ? `${bebe.grupo_sanguineo} ${bebe.tipo_RH === 'Positivo' ? '+' : (bebe.tipo_RH === 'Negativo' ? '-' : '')}` : 'N/D'}</Text>
               <Text style={estilos.statLabel}>Sangre</Text>
             </View>
           </View>
@@ -568,6 +850,36 @@ export default function PantallaPerfil() {
             <Text style={estilos.btnEditarBebeTexto}>Editar datos</Text>
           </TouchableOpacity>
         </View>
+
+        {/* ── Salud del bebé ── */}
+        {renderSeccion('salud', 'Salud del bebé', 'medical-outline', '#10B981', (
+          <View>
+            <View style={estilos.filaInfo}>
+              <Ionicons name="warning-outline" size={16} color="#EF4444" />
+              <Text style={estilos.filaInfoLabel}>Complicaciones</Text>
+              <Text style={estilos.filaInfoValor}>{salud.complicaciones ? 'Sí' : 'No'}</Text>
+            </View>
+            {salud.complicaciones && (
+              <View style={estilos.filaInfoDetalle}>
+                <Text style={estilos.filaInfoTextoDetalle}>{salud.detalles_complicaciones}</Text>
+              </View>
+            )}
+            <View style={estilos.filaInfo}>
+              <Ionicons name="leaf-outline" size={16} color="#F59E0B" />
+              <Text style={estilos.filaInfoLabel}>Alergias</Text>
+              <Text style={estilos.filaInfoValor}>{salud.alergias ? 'Sí' : 'No'}</Text>
+            </View>
+            {salud.alergias && (
+              <View style={estilos.filaInfoDetalle}>
+                <Text style={estilos.filaInfoTextoDetalle}>{salud.detalles_alergias}</Text>
+              </View>
+            )}
+            <TouchableOpacity style={estilos.btnAgregar} onPress={abrirEditarSalud}>
+              <Ionicons name="create-outline" size={18} color={Colores.primario} />
+              <Text style={estilos.btnAgregarTexto}>Editar salud</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
 
         {/* ── Dispositivo ── */}
         {renderSeccion('dispositivo', 'Dispositivo TinyCare', 'hardware-chip-outline', '#8B5CF6', (
@@ -597,8 +909,8 @@ export default function PantallaPerfil() {
           </View>
         ))}
 
-        {/* ── Contactos familiares ── */}
-        {renderSeccion('contactos', 'Contactos familiares', 'people-outline', '#EC4899', (
+        {/* ── Cuidadores ── */}
+        {renderSeccion('contactos', 'Cuidadores de confianza', 'people-outline', '#EC4899', (
           <View>
             {contactos.map(c => (
               <TarjetaPadreEditable
@@ -610,7 +922,25 @@ export default function PantallaPerfil() {
             ))}
             <TouchableOpacity style={estilos.btnAgregar} onPress={abrirNuevoContacto}>
               <Ionicons name="add-circle-outline" size={18} color={Colores.primario} />
-              <Text style={estilos.btnAgregarTexto}>Agregar contacto</Text>
+              <Text style={estilos.btnAgregarTexto}>Agregar cuidador</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+
+        {/* ── Emergencias ── */}
+        {renderSeccion('emergencias', 'Contactos de emergencia', 'warning-outline', '#EF4444', (
+          <View>
+            {emergencias.map(e => (
+              <TarjetaEmergencia
+                key={e.id}
+                contacto={e}
+                onEditar={() => abrirEditarEmergencia(e)}
+                onEliminar={() => eliminarEmergencia(e.id)}
+              />
+            ))}
+            <TouchableOpacity style={estilos.btnAgregar} onPress={abrirNuevaEmergencia}>
+              <Ionicons name="add-circle-outline" size={18} color={Colores.primario} />
+              <Text style={estilos.btnAgregarTexto}>Agregar emergencia</Text>
             </TouchableOpacity>
           </View>
         ))}
@@ -729,19 +1059,42 @@ export default function PantallaPerfil() {
 
       {/* Modal Bebé */}
       <ModalSheet visible={modalBebe} onClose={() => setModalBebe(false)} titulo="Datos del bebé" subtitulo="Información básica" icono="person-circle-outline" colorIcono={Colores.primario}>
-        <CampoInput label="Nombre completo" value={formBebe.nombre} onChangeText={t => setFormBebe(p => ({ ...p, nombre: t }))} icono="person-outline" placeholder="Nombre del bebé" />
-        <CampoFecha label="Fecha de nacimiento" value={formBebe.fechaNacimiento} onChange={v => setFormBebe(p => ({ ...p, fechaNacimiento: v }))} icono="calendar-outline" />
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <View style={{ flex: 1 }}>
-            <CampoInput label="Peso (kg)" value={formBebe.peso} onChangeText={t => setFormBebe(p => ({ ...p, peso: t }))} icono="scale-outline" keyboardType="numeric" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <CampoInput label="Talla (cm)" value={formBebe.talla} onChangeText={t => setFormBebe(p => ({ ...p, talla: t }))} icono="resize-outline" keyboardType="numeric" />
-          </View>
-        </View>
+        <CampoInput label="Nombre completo" value={formBebe.nombre_nino} onChangeText={t => setFormBebe(p => ({ ...p, nombre_nino: t }))} icono="person-outline" placeholder="Nombre del bebé" />
+        <CampoFecha label="Fecha de nacimiento" value={formBebe.fecha_nacimiento} onChange={v => setFormBebe(p => ({ ...p, fecha_nacimiento: v }))} icono="calendar-outline" />
+        <CampoInput label="Condición médica" value={formBebe.condicion_medica} onChangeText={t => setFormBebe(p => ({ ...p, condicion_medica: t }))} icono="medical-outline" placeholder="Condición médica" />
         <SelectorChips label="Sexo" opciones={SEXOS} valor={formBebe.sexo} onChange={v => setFormBebe(p => ({ ...p, sexo: v }))} />
-        <SelectorChips label="Tipo de sangre" opciones={TIPOS_SANGRE} valor={formBebe.tipoSangre} onChange={v => setFormBebe(p => ({ ...p, tipoSangre: v }))} />
+        <SelectorChips label="Grupo Sanguíneo" opciones={['A', 'B', 'AB', 'O']} valor={formBebe.grupo_sanguineo} onChange={v => setFormBebe(p => ({ ...p, grupo_sanguineo: v }))} />
+        <SelectorChips label="Tipo RH" opciones={['Positivo', 'Negativo']} valor={formBebe.tipo_RH} onChange={v => setFormBebe(p => ({ ...p, tipo_RH: v }))} />
         <BotonesModal onCancelar={() => setModalBebe(false)} onGuardar={guardarBebe} />
+      </ModalSheet>
+
+      {/* Modal Salud */}
+      <ModalSheet visible={modalSalud} onClose={() => setModalSalud(false)} titulo="Salud del bebé" subtitulo="Complicaciones y alergias" icono="medical-outline" colorIcono="#10B981">
+        <View style={estilos.filaSwitch}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+            <Ionicons name="warning-outline" size={16} color="#EF4444" style={{ marginRight: 8 }} />
+            <Text style={estilos.switchLabel}>¿Tiene complicaciones médicas?</Text>
+          </View>
+          <Switch value={formSalud.complicaciones} onValueChange={v => setFormSalud(p => ({ ...p, complicaciones: v }))} trackColor={{ false: '#E5E7EB', true: Colores.primarioClaro }} thumbColor={formSalud.complicaciones ? Colores.primario : '#CCC'} />
+        </View>
+
+        {formSalud.complicaciones && (
+          <CampoInput label="Detalles de complicaciones" value={formSalud.detalles_complicaciones} onChangeText={t => setFormSalud(p => ({ ...p, detalles_complicaciones: t }))} icono="document-text-outline" placeholder="Especifique complicaciones" />
+        )}
+
+        <View style={estilos.filaSwitch}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+            <Ionicons name="leaf-outline" size={16} color="#F59E0B" style={{ marginRight: 8 }} />
+            <Text style={estilos.switchLabel}>¿Tiene alergias?</Text>
+          </View>
+          <Switch value={formSalud.alergias} onValueChange={v => setFormSalud(p => ({ ...p, alergias: v }))} trackColor={{ false: '#E5E7EB', true: Colores.primarioClaro }} thumbColor={formSalud.alergias ? Colores.primario : '#CCC'} />
+        </View>
+
+        {formSalud.alergias && (
+          <CampoInput label="Detalles de alergias" value={formSalud.detalles_alergias} onChangeText={t => setFormSalud(p => ({ ...p, detalles_alergias: t }))} icono="document-text-outline" placeholder="Especifique alergias" />
+        )}
+
+        <BotonesModal onCancelar={() => setModalSalud(false)} onGuardar={guardarSalud} />
       </ModalSheet>
 
       {/* Modal Contacto */}
@@ -761,11 +1114,27 @@ export default function PantallaPerfil() {
         {formContacto.nombre ? (
           <View style={{ marginBottom: 14 }}>
             <Text style={estilos.etiquetaCampo}>Vista previa</Text>
-            <TarjetaPadreEditable contacto={formContacto} onEditar={() => {}} onEliminar={() => {}} />
+            <TarjetaPadreEditable contacto={formContacto} onEditar={() => { }} onEliminar={() => { }} />
           </View>
         ) : null}
 
         <BotonesModal onCancelar={() => setModalContacto(false)} onGuardar={guardarContacto} />
+      </ModalSheet>
+
+      {/* Modal Emergencias */}
+      <ModalSheet
+        visible={modalEmergencia}
+        onClose={() => setModalEmergencia(false)}
+        titulo={editandoEmergencia ? 'Editar emergencia' : 'Nueva emergencia'}
+        subtitulo="Contacto en caso de imprevistos"
+        icono="warning-outline"
+        colorIcono="#EF4444"
+      >
+        <CampoInput label="Nombre del contacto" value={formEmergencia.nombre} onChangeText={t => setFormEmergencia(p => ({ ...p, nombre: t }))} icono="person-outline" placeholder="Nombre completo" />
+        <CampoInput label="Teléfono" value={formEmergencia.telefono} onChangeText={t => setFormEmergencia(p => ({ ...p, telefono: t }))} icono="call-outline" placeholder="+52 55 1234 5678" keyboardType="phone-pad" />
+        <CampoInput label="Relación / Parentesco" value={formEmergencia.relacion} onChangeText={t => setFormEmergencia(p => ({ ...p, relacion: t }))} icono="git-network-outline" placeholder="Ej. Abuela, Tío, Vecino" />
+
+        <BotonesModal onCancelar={() => setModalEmergencia(false)} onGuardar={guardarEmergencia} />
       </ModalSheet>
 
       {/* Modal Pediatra */}
@@ -964,6 +1333,19 @@ const estilos = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: Colores.textoOscuro,
+  },
+  filaInfoDetalle: {
+    paddingVertical: 6,
+    paddingLeft: 26,
+    paddingRight: 10,
+    backgroundColor: '#F9FAFB',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colores.divisor,
+  },
+  filaInfoTextoDetalle: {
+    fontSize: 13,
+    color: Colores.textoMedio,
+    fontStyle: 'italic',
   },
 
   // ── Switch ──

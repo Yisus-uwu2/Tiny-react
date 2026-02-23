@@ -13,18 +13,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colores } from '../constantes/colores';
 
 // Pantallas
-import PantallaRegistro      from '../pantallas/PantallaRegistro';
-import PantallaCarga          from '../pantallas/PantallaCarga';
-import PantallaInicio         from '../pantallas/PantallaInicio';
-import PantallaSignosVitales  from '../pantallas/PantallaSignosVitales';
-import PantallaTemperatura    from '../pantallas/PantallaTemperatura';
-import PantallaEstadisticas   from '../pantallas/PantallaEstadisticas';
-import PantallaPerfil         from '../pantallas/PantallaPerfil';
-import PantallaMercado        from '../pantallas/PantallaMercado';
-import PantallaConfiguracion  from '../pantallas/PantallaConfiguracion';
+import PantallaRegistro from '../pantallas/PantallaRegistro';
+import PantallaCarga from '../pantallas/PantallaCarga';
+import PantallaInicio from '../pantallas/PantallaInicio';
+import PantallaSignosVitales from '../pantallas/PantallaSignosVitales';
+import PantallaTemperatura from '../pantallas/PantallaTemperatura';
+import PantallaEstadisticas from '../pantallas/PantallaEstadisticas';
+import PantallaPerfil from '../pantallas/PantallaPerfil';
+import PantallaMercado from '../pantallas/PantallaMercado';
+import PantallaConfiguracion from '../pantallas/PantallaConfiguracion';
 
 const Stack = createNativeStackNavigator();
-const Tab   = createBottomTabNavigator();
+const Tab = createBottomTabNavigator();
 
 // Mapa de íconos y colores por pestaña
 const ICONOS_TAB: Record<string, {
@@ -32,11 +32,11 @@ const ICONOS_TAB: Record<string, {
   filled: keyof typeof Ionicons.glyphMap;
   color: string;
 }> = {
-  Inicio:        { outline: 'home-outline',        filled: 'home',        color: '#8B5CF6' },  // morado
-  Vitales:       { outline: 'heart-outline',        filled: 'heart',       color: '#EF4444' },  // rojo
-  Estadísticas:  { outline: 'stats-chart-outline',  filled: 'stats-chart', color: '#3B82F6' },  // azul
-  Mercado:       { outline: 'bag-outline',          filled: 'bag',         color: '#22C55E' },  // verde
-  Perfil:        { outline: 'person-outline',       filled: 'person',      color: '#F59E0B' },  // amarillo
+  Inicio: { outline: 'home-outline', filled: 'home', color: '#8B5CF6' },  // morado
+  Vitales: { outline: 'heart-outline', filled: 'heart', color: '#EF4444' },  // rojo
+  Estadísticas: { outline: 'stats-chart-outline', filled: 'stats-chart', color: '#3B82F6' },  // azul
+  Mercado: { outline: 'bag-outline', filled: 'bag', color: '#22C55E' },  // verde
+  Perfil: { outline: 'person-outline', filled: 'person', color: '#F59E0B' },  // amarillo
 };
 
 const COLOR_INACTIVO = '#B0B0C0';
@@ -84,11 +84,11 @@ function TabsPrincipales() {
         tabBarStyle: estilosTab.barra,
       })}
     >
-      <Tab.Screen name="Perfil"        component={PantallaPerfil} />
-      <Tab.Screen name="Mercado"       component={PantallaMercado} />
-      <Tab.Screen name="Inicio"        component={PantallaInicio} />
-      <Tab.Screen name="Vitales"       component={PantallaSignosVitales} />
-      <Tab.Screen name="Estadísticas"  component={PantallaEstadisticas} />
+      <Tab.Screen name="Perfil" component={PantallaPerfil} />
+      <Tab.Screen name="Mercado" component={PantallaMercado} />
+      <Tab.Screen name="Inicio" component={PantallaInicio} />
+      <Tab.Screen name="Vitales" component={PantallaSignosVitales} />
+      <Tab.Screen name="Estadísticas" component={PantallaEstadisticas} />
     </Tab.Navigator>
   );
 }
@@ -114,15 +114,54 @@ const estilosTab = StyleSheet.create({
 });
 
 // ── Navegador raíz ──────────────────────────────────────────────
+import { supabase } from '../../lib/supabase';
+import { Session, AuthChangeEvent } from '@supabase/supabase-js';
+import { ActivityIndicator } from 'react-native';
+
+import PantallaSignup from '../pantallas/PantallaSignup';
+import PantallaLogin from '../pantallas/PantallaLogin';
 
 export default function NavegadorApp() {
+  const [session, setSession] = React.useState<Session | null>(null);
+  const [cargando, setCargando] = React.useState(true);
+
+  React.useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setCargando(false);
+    });
+
+    supabase.auth.onAuthStateChange((_event: AuthChangeEvent, currentSession: Session | null) => {
+      setSession(currentSession);
+    });
+  }, []);
+
+  if (cargando) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#EDE9FE' }}>
+        <ActivityIndicator size="large" color="#8B5CF6" />
+      </View>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
-          <Stack.Screen name="Registro"   component={PantallaRegistro} />
-          <Stack.Screen name="Carga"      component={PantallaCarga} />
-          <Stack.Screen name="Principal"  component={TabsPrincipales} />
+          {session && session.user ? (
+            // Si el usuario está autenticado, muestra la app normal y el registro del bebé si es necesario
+            <>
+              <Stack.Screen name="Principal" component={TabsPrincipales} />
+              <Stack.Screen name="Registro" component={PantallaRegistro} />
+              <Stack.Screen name="Carga" component={PantallaCarga} />
+            </>
+          ) : (
+            // Flujo de Autenticación
+            <>
+              <Stack.Screen name="Signup" component={PantallaSignup} />
+              <Stack.Screen name="Login" component={PantallaLogin} />
+            </>
+          )}
         </Stack.Navigator>
       </NavigationContainer>
     </SafeAreaProvider>
